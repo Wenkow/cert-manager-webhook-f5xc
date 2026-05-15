@@ -19,6 +19,8 @@ const (
 
 // Retry settings for transient 503 errors (F5 XC code 14: "Previous DNS zone change is pending").
 // These are vars (not consts) so tests can override them.
+const retryableCode = 14
+
 var (
 	retryInterval   = 2 * time.Second
 	retryMaxElapsed = 60 * time.Second
@@ -53,10 +55,15 @@ func NewClient(tenantName, server string, auth Authenticator) (*Client, error) {
 
 // CreateRRSet creates a new DNS record set via POST.
 // Retries on transient 503 errors.
-func (c *Client) CreateRRSet(ctx context.Context, zone, group string, rrset APIRRSet) (*APIRRSet, error) {
+func (c *Client) CreateRRSet(ctx context.Context, zone, group string, rrset RRSet) (*APIRRSet, error) {
 	path := fmt.Sprintf(rrsetPathPattern, zone, group)
+	body := APIRRSet{
+		DNSZoneName: zone,
+		GroupName:   group,
+		RRSet:       rrset,
+	}
 	var result APIRRSet
-	if err := c.doWithRetry(ctx, http.MethodPost, path, rrset, &result); err != nil {
+	if err := c.doWithRetry(ctx, http.MethodPost, path, body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -79,11 +86,17 @@ func (c *Client) GetRRSet(ctx context.Context, zone, group, name, recordType str
 
 // ReplaceRRSet updates an existing DNS record set via PUT.
 // Retries on transient 503 errors.
-func (c *Client) ReplaceRRSet(ctx context.Context, zone, group, name, recordType string, rrset APIRRSet) (*APIRRSet, error) {
+func (c *Client) ReplaceRRSet(ctx context.Context, zone, group, name, recordType string, rrset RRSet) (*APIRRSet, error) {
 	path := fmt.Sprintf(rrsetPathPattern+"/%s/%s", zone, group, name, recordType)
-	rrset.Type = recordType
+	body := APIRRSet{
+		DNSZoneName: zone,
+		GroupName:   group,
+		RecordName:  name,
+		Type:        recordType,
+		RRSet:       rrset,
+	}
 	var result APIRRSet
-	if err := c.doWithRetry(ctx, http.MethodPut, path, rrset, &result); err != nil {
+	if err := c.doWithRetry(ctx, http.MethodPut, path, body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -111,6 +124,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload, result in
 		return fmt.Errorf("f5xc: failed to create request: %w", err)
 	}
 
+	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -159,9 +173,8 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, payload, 
 			return nil
 		}
 
-		// Only retry on 503 (Service Unavailable) API errors.
 		var apiErr *APIError
-		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable {
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable || apiErr.Code != retryableCode {
 			return err
 		}
 

@@ -76,10 +76,10 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 		return fmt.Errorf("f5xc: getting existing RRSet: %w", err)
 	}
 
-	if existing == nil {
-		// No existing record: create a new one.
+	if existing == nil || existing.RRSet.TXTRecord == nil {
 		rrset := client.RRSet{
-			TTL: cfg.EffectiveTTL(),
+			Description: "cert-manager",
+			TTL:         cfg.EffectiveTTL(),
 			TXTRecord: &client.TXTRecord{
 				Name:   subdomain,
 				Values: []string{ch.Key},
@@ -91,7 +91,6 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 		return nil
 	}
 
-	// Record exists: append the new value.
 	values := existing.RRSet.TXTRecord.Values
 	values = append(values, ch.Key)
 	rrset := client.RRSet{
@@ -163,36 +162,9 @@ func extractSubDomain(fqdn, zone string) string {
 	return subdomain
 }
 
-// defaultClientFactory creates a real F5 XC API client with token auth.
 func defaultClientFactory(cfg *F5XCConfig, token string) (RRSetClient, error) {
 	auth := &client.TokenAuth{Token: token}
-	c, err := client.NewClient(cfg.TenantName, cfg.Server, auth)
-	if err != nil {
-		return nil, err
-	}
-	return &clientAdapter{client: c}, nil
-}
-
-// clientAdapter adapts client.Client to the RRSetClient interface.
-// The real client's Create/Replace take APIRRSet; the solver interface uses RRSet.
-type clientAdapter struct {
-	client *client.Client
-}
-
-func (a *clientAdapter) GetRRSet(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-	return a.client.GetRRSet(ctx, zone, group, name, recordType)
-}
-
-func (a *clientAdapter) CreateRRSet(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
-	return a.client.CreateRRSet(ctx, zone, group, client.APIRRSet{RRSet: rrset})
-}
-
-func (a *clientAdapter) ReplaceRRSet(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-	return a.client.ReplaceRRSet(ctx, zone, group, name, recordType, client.APIRRSet{RRSet: rrset})
-}
-
-func (a *clientAdapter) DeleteRRSet(ctx context.Context, zone, group, name, recordType string) error {
-	return a.client.DeleteRRSet(ctx, zone, group, name, recordType)
+	return client.NewClient(cfg.TenantName, cfg.Server, auth)
 }
 
 // kubeSecretReader reads secrets from Kubernetes.
