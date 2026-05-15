@@ -58,7 +58,7 @@ func TestClient_AuthHeaderSent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(APIError{Code: 5, Message: "not found"})
+		_ = json.NewEncoder(w).Encode(APIError{Code: 5, Message: "not found"})
 	}))
 	defer srv.Close()
 
@@ -68,7 +68,7 @@ func TestClient_AuthHeaderSent(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	c.GetRRSet(context.Background(), "example.com", "grp", "sub", "TXT")
+	_, _ = c.GetRRSet(context.Background(), "example.com", "grp", "sub", "TXT")
 
 	if gotAuth != "APIToken mock-token" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "APIToken mock-token")
@@ -93,9 +93,9 @@ func TestClient_CreateRRSet(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&gotBody)
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(APIRRSet{
+		_ = json.NewEncoder(w).Encode(APIRRSet{
 			DNSZoneName: "example.com",
 			GroupName:   "grp",
 			RecordName:  "_acme-challenge",
@@ -143,7 +143,7 @@ func TestClient_GetRRSet(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(APIRRSet{
+		_ = json.NewEncoder(w).Encode(APIRRSet{
 			DNSZoneName: "example.com",
 			GroupName:   "grp",
 			RecordName:  "_acme-challenge",
@@ -171,7 +171,7 @@ func TestClient_GetRRSet(t *testing.T) {
 func TestClient_GetRRSet_NotFound(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(APIError{Code: 5, Message: "not found"})
+		_ = json.NewEncoder(w).Encode(APIError{Code: 5, Message: "not found"})
 	})
 
 	result, err := c.GetRRSet(context.Background(), "example.com", "grp", "nonexistent", "TXT")
@@ -190,9 +190,9 @@ func TestClient_ReplaceRRSet(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&gotBody)
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(APIRRSet{
+		_ = json.NewEncoder(w).Encode(APIRRSet{
 			DNSZoneName: "example.com",
 			RecordName:  "_acme-challenge",
 			Type:        "TXT",
@@ -253,7 +253,7 @@ func TestClient_DeleteRRSet(t *testing.T) {
 func TestClient_APIError(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(APIError{Code: 7, Message: "permission denied"})
+		_ = json.NewEncoder(w).Encode(APIError{Code: 7, Message: "permission denied"})
 	})
 
 	_, err := c.GetRRSet(context.Background(), "example.com", "grp", "sub", "TXT")
@@ -283,11 +283,11 @@ func TestClient_Retry503(t *testing.T) {
 		attempts++
 		if attempts <= 2 {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
+			_ = json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(APIRRSet{
+		_ = json.NewEncoder(w).Encode(APIRRSet{
 			DNSZoneName: "example.com",
 			RecordName:  "_acme-challenge",
 		})
@@ -322,7 +322,7 @@ func TestClient_Retry503_Exhausted(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		attempts++
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
+		_ = json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
 	})
 
 	// Override retry interval so test runs fast.
