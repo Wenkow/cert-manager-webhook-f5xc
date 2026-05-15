@@ -1,6 +1,6 @@
 # Artifact Hub repository metadata
 # See https://artifacthub.io/docs/topics/repositories/helm-charts/
-repositoryID: ""
+repositoryID: "d399a1a2-9ec8-46c1-ab7a-245749ce7978"
 owners:
-  - name: wenkow
-    email: ""
+  - name: Martin Kylián
+    email: "martin.kylian@gmail.com"
