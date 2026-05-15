@@ -111,6 +111,15 @@ When cert-manager processes this Certificate, it will:
 4. Call the webhook to clean up the TXT record after validation succeeds.
 5. Store the issued certificate in the `example-tls` Secret.
 
+## Upgrade
+
+```bash
+helm upgrade cert-manager-webhook-f5xc \
+  oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
+  --version 0.2.0 \
+  --namespace cert-manager
+```
+
 ## Uninstall
 
 ```bash

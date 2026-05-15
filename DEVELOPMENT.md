@@ -145,7 +145,16 @@ Deploy to a local [kind](https://kind.sigs.k8s.io/) cluster:
    make deploy
    ```
 
-4. To uninstall:
+4. To upgrade after rebuilding:
+
+   ```bash
+   helm upgrade cert-manager-webhook-f5xc deploy/cert-manager-webhook-f5xc \
+     --namespace cert-manager \
+     --set image.repository=ghcr.io/wenkow/cert-manager-webhook-f5xc \
+     --set image.tag=latest
+   ```
+
+5. To uninstall:
 
    ```bash
    make undeploy
