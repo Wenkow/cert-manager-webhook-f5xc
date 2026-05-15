@@ -1,6 +1,7 @@
 # cert-manager-webhook-f5xc
 
 [![CI](https://github.com/wenkow/cert-manager-webhook-f5xc/actions/workflows/ci.yaml/badge.svg)](https://github.com/wenkow/cert-manager-webhook-f5xc/actions/workflows/ci.yaml)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/cert-manager-webhook-f5xc)](https://artifacthub.io/packages/search?repo=cert-manager-webhook-f5xc)
 
 An external [cert-manager](https://cert-manager.io/) DNS01 webhook solver for
 [F5 Distributed Cloud](https://www.f5.com/cloud). This webhook allows
