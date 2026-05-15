@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook/cmd"
+
+	"github.com/wenkow/cert-manager-webhook-f5xc/f5xc"
 )
 
 var GroupName = os.Getenv("GROUP_NAME")
@@ -13,5 +15,5 @@ func main() {
 		panic("GROUP_NAME must be specified")
 	}
 
-	cmd.RunWebhookServer(GroupName, nil)
+	cmd.RunWebhookServer(GroupName, f5xc.NewSolver())
 }
