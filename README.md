@@ -43,13 +43,13 @@ The solver configuration is specified inline under `solvers[].dns01.webhook.conf
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt-prod
+  name: letsencrypt-f5xc-prod
 spec:
   acme:
     email: you@example.com
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
-      name: letsencrypt-prod-account-key
+      name: letsencrypt-f5xc-prod-account-key
     solvers:
       - dns01:
           webhook:
@@ -57,8 +57,11 @@ spec:
             solverName: f5xc
             config:
               tenantName: my-tenant
-              groupName: acme.f5xc.io
-              # server: https://my-tenant.console.ves.volterra.io/api
+              # RRSet group name in your F5 XC DNS zone.
+              # Must contain only lowercase letters, digits, and hyphens.
+              # Find it in F5 XC console: DNS Management > DNS Zones > your zone > RR Set Groups.
+              groupName: "cert-manager"
+              # server: "console.ves.volterra.io"
               # ttl: 120
               apiTokenSecretRef:
                 name: f5xc-api-token
@@ -69,9 +72,9 @@ spec:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `tenantName` | Yes | - | Your F5 XC tenant name (e.g. `my-tenant`). Used to construct the API base URL if `server` is not set. |
-| `groupName` | Yes | - | The webhook solver group name. Must match the `groupName` value in `values.yaml` (default `acme.f5xc.io`). |
-| `server` | No | `https://<tenantName>.console.ves.volterra.io/api` | Override the F5 XC API base URL. Useful for custom or private endpoints. |
+| `tenantName` | Yes | - | Your F5 XC tenant name (e.g. `my-tenant`). Used to construct the API base URL. |
+| `groupName` | Yes | - | RRSet group name in your F5 XC DNS zone. Must contain only lowercase letters, digits, and hyphens. Find it in F5 XC console under DNS Management > DNS Zones > your zone > RR Set Groups. |
+| `server` | No | `console.ves.volterra.io` | Override the F5 XC console domain. |
 | `ttl` | No | `120` | TTL in seconds for DNS TXT records created during challenges. |
 | `apiTokenSecretRef.name` | Yes | - | Name of the Kubernetes Secret containing the F5 XC API token. |
 | `apiTokenSecretRef.key` | Yes | - | Key within the Secret that holds the API token value. |
@@ -90,7 +93,7 @@ metadata:
 spec:
   secretName: example-tls
   issuerRef:
-    name: letsencrypt-prod
+    name: letsencrypt-f5xc-prod
     kind: ClusterIssuer
   dnsNames:
     - example.com
