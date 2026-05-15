@@ -1,0 +1,8 @@
+{
+  "tenantName": "test-tenant",
+  "groupName": "cert-manager",
+  "apiTokenSecretRef": {
+    "name": "f5xc-credentials",
+    "key": "api-token"
+  }
+}
