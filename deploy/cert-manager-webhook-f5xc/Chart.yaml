@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cert-manager-webhook-f5xc
+description: A cert-manager webhook solver for F5 Distributed Cloud DNS
+version: 0.1.0
+appVersion: "0.1.0"
