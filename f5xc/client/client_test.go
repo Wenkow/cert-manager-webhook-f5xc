@@ -102,13 +102,11 @@ func TestClient_CreateRRSet(t *testing.T) {
 		})
 	})
 
-	input := APIRRSet{
-		RRSet: RRSet{
-			TTL: 60,
-			TXTRecord: &TXTRecord{
-				Name:   "_acme-challenge",
-				Values: []string{"token123"},
-			},
+	input := RRSet{
+		TTL: 60,
+		TXTRecord: &TXTRecord{
+			Name:   "_acme-challenge",
+			Values: []string{"token123"},
 		},
 	}
 
@@ -123,6 +121,12 @@ func TestClient_CreateRRSet(t *testing.T) {
 	wantPath := "/api/config/dns/namespaces/system/dns_zones/example.com/rrsets/grp"
 	if gotPath != wantPath {
 		t.Errorf("path = %q, want %q", gotPath, wantPath)
+	}
+	if gotBody.DNSZoneName != "example.com" {
+		t.Errorf("request body DNSZoneName = %q, want %q", gotBody.DNSZoneName, "example.com")
+	}
+	if gotBody.GroupName != "grp" {
+		t.Errorf("request body GroupName = %q, want %q", gotBody.GroupName, "grp")
 	}
 	if gotBody.RRSet.TXTRecord == nil || gotBody.RRSet.TXTRecord.Name != "_acme-challenge" {
 		t.Errorf("request body not parsed correctly: %+v", gotBody)
@@ -195,13 +199,11 @@ func TestClient_ReplaceRRSet(t *testing.T) {
 		})
 	})
 
-	input := APIRRSet{
-		RRSet: RRSet{
-			TTL: 120,
-			TXTRecord: &TXTRecord{
-				Name:   "_acme-challenge",
-				Values: []string{"new-token"},
-			},
+	input := RRSet{
+		TTL: 120,
+		TXTRecord: &TXTRecord{
+			Name:   "_acme-challenge",
+			Values: []string{"new-token"},
 		},
 	}
 
@@ -290,18 +292,15 @@ func TestClient_Retry503(t *testing.T) {
 			RecordName:  "_acme-challenge",
 		})
 	})
-	// Override retry interval so test runs fast.
 	origInterval := retryInterval
 	retryInterval = 10 * time.Millisecond
 	t.Cleanup(func() { retryInterval = origInterval })
 
-	input := APIRRSet{
-		RRSet: RRSet{
-			TTL: 60,
-			TXTRecord: &TXTRecord{
-				Name:   "_acme-challenge",
-				Values: []string{"token123"},
-			},
+	input := RRSet{
+		TTL: 60,
+		TXTRecord: &TXTRecord{
+			Name:   "_acme-challenge",
+			Values: []string{"token123"},
 		},
 	}
 
@@ -334,18 +333,15 @@ func TestClient_Retry503_Exhausted(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Use a short retryMaxElapsed for the test.
 	origMax := retryMaxElapsed
 	retryMaxElapsed = 100 * time.Millisecond
 	t.Cleanup(func() { retryMaxElapsed = origMax })
 
-	input := APIRRSet{
-		RRSet: RRSet{
-			TTL: 60,
-			TXTRecord: &TXTRecord{
-				Name:   "_acme-challenge",
-				Values: []string{"token123"},
-			},
+	input := RRSet{
+		TTL: 60,
+		TXTRecord: &TXTRecord{
+			Name:   "_acme-challenge",
+			Values: []string{"token123"},
 		},
 	}
 
