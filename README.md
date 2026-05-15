@@ -37,7 +37,9 @@ issuance for domains managed by F5 Distributed Cloud DNS.
 ## Configuration
 
 Create a `ClusterIssuer` (or `Issuer`) that references the webhook solver.
-The solver configuration is specified inline under `solvers[].dns01.webhook.config`:
+Note that `groupName` appears twice in the YAML — at the `webhook` level it is a fixed identifier
+that tells cert-manager which webhook to call (always `acme.f5xc.io`), while inside `config`
+it is the name of the RRSet group in your F5 XC DNS zone:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -53,13 +55,14 @@ spec:
     solvers:
       - dns01:
           webhook:
+            # These two fields are fixed — they tell cert-manager which webhook to call.
             groupName: acme.f5xc.io
             solverName: f5xc
+            # Everything below is passed to the webhook as solver configuration.
             config:
               tenantName: my-tenant
-              # RRSet group name in your F5 XC DNS zone.
-              # Must contain only lowercase letters, digits, and hyphens.
-              # Find it in F5 XC console: DNS Management > DNS Zones > your zone > RR Set Groups.
+              # RRSet group name in your F5 XC DNS zone (lowercase, digits, hyphens only).
+              # You can choose any name — F5 XC will create the group automatically.
               groupName: "cert-manager"
               # server: "console.ves.volterra.io"
               # ttl: 120
