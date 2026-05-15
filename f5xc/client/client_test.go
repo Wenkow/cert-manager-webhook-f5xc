@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type mockAuth struct{}
@@ -270,5 +271,97 @@ func TestClient_APIError(t *testing.T) {
 	}
 	if apiErr.Message != "permission denied" {
 		t.Errorf("Message = %q, want %q", apiErr.Message, "permission denied")
+	}
+}
+
+func TestClient_Retry503(t *testing.T) {
+	attempts := 0
+
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(APIRRSet{
+			DNSZoneName: "example.com",
+			RecordName:  "_acme-challenge",
+		})
+	})
+	// Override retry interval so test runs fast.
+	origInterval := retryInterval
+	retryInterval = 10 * time.Millisecond
+	t.Cleanup(func() { retryInterval = origInterval })
+
+	input := APIRRSet{
+		RRSet: RRSet{
+			TTL: 60,
+			TXTRecord: &TXTRecord{
+				Name:   "_acme-challenge",
+				Values: []string{"token123"},
+			},
+		},
+	}
+
+	result, err := c.CreateRRSet(context.Background(), "example.com", "grp", input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestClient_Retry503_Exhausted(t *testing.T) {
+	attempts := 0
+
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
+	})
+
+	// Override retry interval so test runs fast.
+	origInterval := retryInterval
+	retryInterval = 10 * time.Millisecond
+	t.Cleanup(func() { retryInterval = origInterval })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use a short retryMaxElapsed for the test.
+	origMax := retryMaxElapsed
+	retryMaxElapsed = 100 * time.Millisecond
+	t.Cleanup(func() { retryMaxElapsed = origMax })
+
+	input := APIRRSet{
+		RRSet: RRSet{
+			TTL: 60,
+			TXTRecord: &TXTRecord{
+				Name:   "_acme-challenge",
+				Values: []string{"token123"},
+			},
+		},
+	}
+
+	_, err := c.CreateRRSet(ctx, "example.com", "grp", input)
+	if err == nil {
+		t.Fatal("expected error after retries exhausted, got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusServiceUnavailable)
+	}
+	if attempts < 2 {
+		t.Errorf("expected at least 2 attempts, got %d", attempts)
 	}
 }
