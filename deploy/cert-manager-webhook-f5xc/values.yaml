@@ -1,0 +1,28 @@
+groupName: acme.f5xc.io
+
+certManager:
+  namespace: cert-manager
+  serviceAccountName: cert-manager
+
+image:
+  repository: ghcr.io/wenkow/cert-manager-webhook-f5xc
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 443
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

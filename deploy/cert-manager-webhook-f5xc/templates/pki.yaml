@@ -1,0 +1,70 @@
+---
+# Create a selfsigned Issuer, in order to create a root CA certificate for
+# signing webhook serving certificates
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "cert-manager-webhook-f5xc.selfSignedIssuer" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app: {{ include "cert-manager-webhook-f5xc.name" . }}
+    chart: {{ include "cert-manager-webhook-f5xc.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selfSigned: {}
+---
+# Generate a CA Certificate used to sign certificates for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cert-manager-webhook-f5xc.rootCACertificate" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app: {{ include "cert-manager-webhook-f5xc.name" . }}
+    chart: {{ include "cert-manager-webhook-f5xc.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  secretName: {{ include "cert-manager-webhook-f5xc.rootCACertificate" . }}
+  duration: 43800h0m0s # 5y
+  issuerRef:
+    name: {{ include "cert-manager-webhook-f5xc.selfSignedIssuer" . }}
+  commonName: "ca.cert-manager-webhook-f5xc.cert-manager"
+  isCA: true
+---
+# Create an Issuer that uses the above generated CA certificate to issue certs
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "cert-manager-webhook-f5xc.rootCAIssuer" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app: {{ include "cert-manager-webhook-f5xc.name" . }}
+    chart: {{ include "cert-manager-webhook-f5xc.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  ca:
+    secretName: {{ include "cert-manager-webhook-f5xc.rootCACertificate" . }}
+---
+# Finally, generate a serving certificate for the webhook to use
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cert-manager-webhook-f5xc.servingCertificate" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app: {{ include "cert-manager-webhook-f5xc.name" . }}
+    chart: {{ include "cert-manager-webhook-f5xc.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  secretName: {{ include "cert-manager-webhook-f5xc.servingCertificate" . }}
+  duration: 8760h0m0s # 1y
+  issuerRef:
+    name: {{ include "cert-manager-webhook-f5xc.rootCAIssuer" . }}
+  dnsNames:
+    - {{ include "cert-manager-webhook-f5xc.fullname" . }}
+    - {{ include "cert-manager-webhook-f5xc.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "cert-manager-webhook-f5xc.fullname" . }}.{{ .Release.Namespace }}.svc
