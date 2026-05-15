@@ -17,6 +17,13 @@ const (
 	rrsetPathPattern = "/api/config/dns/namespaces/system/dns_zones/%s/rrsets/%s"
 )
 
+// Retry settings for transient 503 errors (F5 XC code 14: "Previous DNS zone change is pending").
+// These are vars (not consts) so tests can override them.
+var (
+	retryInterval   = 2 * time.Second
+	retryMaxElapsed = 60 * time.Second
+)
+
 // Client is an HTTP client for the F5 Distributed Cloud RRSet API.
 type Client struct {
 	baseURL    string
@@ -45,10 +52,11 @@ func NewClient(tenantName, server string, auth Authenticator) (*Client, error) {
 }
 
 // CreateRRSet creates a new DNS record set via POST.
+// Retries on transient 503 errors.
 func (c *Client) CreateRRSet(ctx context.Context, zone, group string, rrset APIRRSet) (*APIRRSet, error) {
 	path := fmt.Sprintf(rrsetPathPattern, zone, group)
 	var result APIRRSet
-	if err := c.do(ctx, http.MethodPost, path, rrset, &result); err != nil {
+	if err := c.doWithRetry(ctx, http.MethodPost, path, rrset, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -70,11 +78,12 @@ func (c *Client) GetRRSet(ctx context.Context, zone, group, name, recordType str
 }
 
 // ReplaceRRSet updates an existing DNS record set via PUT.
+// Retries on transient 503 errors.
 func (c *Client) ReplaceRRSet(ctx context.Context, zone, group, name, recordType string, rrset APIRRSet) (*APIRRSet, error) {
 	path := fmt.Sprintf(rrsetPathPattern+"/%s/%s", zone, group, name, recordType)
 	rrset.Type = recordType
 	var result APIRRSet
-	if err := c.do(ctx, http.MethodPut, path, rrset, &result); err != nil {
+	if err := c.doWithRetry(ctx, http.MethodPut, path, rrset, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -137,4 +146,36 @@ func (c *Client) do(ctx context.Context, method, path string, payload, result in
 	}
 
 	return nil
+}
+
+// doWithRetry wraps do with retry logic for transient 503 errors.
+// It retries with a constant backoff until retryMaxElapsed is exceeded or the context is cancelled.
+func (c *Client) doWithRetry(ctx context.Context, method, path string, payload, result interface{}) error {
+	deadline := time.Now().Add(retryMaxElapsed)
+
+	for {
+		err := c.do(ctx, method, path, payload, result)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on 503 (Service Unavailable) API errors.
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable {
+			return err
+		}
+
+		// Check if we've exceeded the max elapsed time.
+		if time.Now().Add(retryInterval).After(deadline) {
+			return err
+		}
+
+		// Wait for the retry interval or context cancellation.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(retryInterval):
+			// Continue to next attempt.
+		}
+	}
 }
