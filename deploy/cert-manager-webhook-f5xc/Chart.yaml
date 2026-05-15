@@ -3,3 +3,26 @@ name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
 version: 0.1.0
 appVersion: "0.1.0"
+type: application
+keywords:
+  - cert-manager
+  - f5
+  - f5xc
+  - dns01
+  - acme
+  - webhook
+home: https://github.com/wenkow/cert-manager-webhook-f5xc
+sources:
+  - https://github.com/wenkow/cert-manager-webhook-f5xc
+maintainers:
+  - name: wenkow
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial release with F5 XC DNS01 webhook solver
+  artifacthub.io/links: |
+    - name: cert-manager
+      url: https://cert-manager.io
+    - name: F5 Distributed Cloud
+      url: https://www.f5.com/cloud
