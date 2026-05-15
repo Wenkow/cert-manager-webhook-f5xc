@@ -81,7 +81,7 @@ jobs:
       - name: Package Helm chart
         run: helm package deploy/cert-manager-webhook-f5xc
       - name: Push Helm chart as OCI artifact
-        run: helm push cert-manager-webhook-f5xc-*.tgz oci://ghcr.io/wenkow/cert-manager-webhook-f5xc
+        run: helm push cert-manager-webhook-f5xc-*.tgz oci://ghcr.io/wenkow
 
   release:
     name: GitHub Release
