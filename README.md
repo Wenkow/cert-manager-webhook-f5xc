@@ -117,7 +117,7 @@ When cert-manager processes this Certificate, it will:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.2.0 \
+  --version 0.2.4 \
   --namespace cert-manager
 ```
 
