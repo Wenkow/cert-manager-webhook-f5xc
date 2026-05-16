@@ -82,6 +82,13 @@ jobs:
         run: helm package deploy/cert-manager-webhook-f5xc
       - name: Push Helm chart as OCI artifact
         run: helm push cert-manager-webhook-f5xc-*.tgz oci://ghcr.io/wenkow/charts
+      - name: Push Artifact Hub metadata
+        uses: oras-project/setup-oras@v1
+      - run: |
+          oras push \
+            ghcr.io/wenkow/charts/cert-manager-webhook-f5xc:artifacthub.io \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
 
   release:
     name: GitHub Release
