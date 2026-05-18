@@ -106,28 +106,54 @@ func TestLoadConfig_NoAuth(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_BothAuth(t *testing.T) {
+func TestLoadConfig_BothAuth_PrefersToken(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
 		"tenantName": "my-tenant",
 		"groupName":  "cert-manager",
 		"apiTokenSecretRef":    map[string]string{"name": "s", "key": "k"},
 		"certificateSecretRef": map[string]string{"name": "c", "p12Key": "p", "passwordKey": "pw"},
 	})
-	_, err := LoadConfig(cfgJSON)
-	if err == nil {
-		t.Fatal("expected error when both auth methods")
+	cfg, err := LoadConfig(cfgJSON)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.APITokenSecretRef == nil {
+		t.Error("expected apiTokenSecretRef to be preserved")
+	}
+	if cfg.CertificateSecretRef != nil {
+		t.Error("expected certificateSecretRef to be cleared when token is also present")
 	}
 }
 
-func TestLoadConfig_CertAuthNotImplemented(t *testing.T) {
+func TestLoadConfig_CertAuth_Valid(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
 		"tenantName": "my-tenant",
 		"groupName":  "cert-manager",
-		"certificateSecretRef": map[string]string{"name": "c", "p12Key": "p", "passwordKey": "pw"},
+		"certificateSecretRef": map[string]string{
+			"name": "f5xc-cert", "p12Key": "cert.p12", "passwordKey": "password",
+		},
+	})
+	cfg, err := LoadConfig(cfgJSON)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CertificateSecretRef == nil {
+		t.Fatal("expected certificateSecretRef to be set")
+	}
+	if cfg.CertificateSecretRef.Name != "f5xc-cert" {
+		t.Errorf("name = %s, want f5xc-cert", cfg.CertificateSecretRef.Name)
+	}
+}
+
+func TestLoadConfig_CertAuth_MissingFields(t *testing.T) {
+	cfgJSON := makeConfig(t, map[string]any{
+		"tenantName": "my-tenant",
+		"groupName":  "cert-manager",
+		"certificateSecretRef": map[string]string{"name": "f5xc-cert"},
 	})
 	_, err := LoadConfig(cfgJSON)
 	if err == nil {
-		t.Fatal("expected error for cert auth not implemented")
+		t.Fatal("expected error for missing p12Key and passwordKey")
 	}
 }
 

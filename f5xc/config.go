@@ -51,20 +51,31 @@ func (c *F5XCConfig) validate() error {
 	if c.GroupName == "" {
 		return errors.New("f5xc: groupName is required")
 	}
+
 	hasToken := c.APITokenSecretRef != nil
 	hasCert := c.CertificateSecretRef != nil
+
 	if !hasToken && !hasCert {
 		return errors.New("f5xc: one of apiTokenSecretRef or certificateSecretRef is required")
 	}
+
 	if hasToken && hasCert {
-		return errors.New("f5xc: only one of apiTokenSecretRef or certificateSecretRef may be specified")
+		c.CertificateSecretRef = nil
 	}
-	if hasCert {
-		return errors.New("f5xc: certificate authentication is not yet implemented")
+
+	if hasToken {
+		if c.APITokenSecretRef.Name == "" || c.APITokenSecretRef.Key == "" {
+			return errors.New("f5xc: apiTokenSecretRef requires both name and key")
+		}
 	}
-	if c.APITokenSecretRef.Name == "" || c.APITokenSecretRef.Key == "" {
-		return errors.New("f5xc: apiTokenSecretRef requires both name and key")
+
+	if c.CertificateSecretRef != nil {
+		ref := c.CertificateSecretRef
+		if ref.Name == "" || ref.P12Key == "" || ref.PasswordKey == "" {
+			return errors.New("f5xc: certificateSecretRef requires name, p12Key, and passwordKey")
+		}
 	}
+
 	return nil
 }
 
