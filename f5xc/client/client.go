@@ -46,10 +46,16 @@ func NewClient(tenantName, server string, auth Authenticator) (*Client, error) {
 	if server == "" {
 		server = defaultServer
 	}
+
+	httpClient := &http.Client{Timeout: defaultTimeout}
+	if tp, ok := auth.(TransportProvider); ok {
+		httpClient.Transport = tp.Transport()
+	}
+
 	return &Client{
 		baseURL:    fmt.Sprintf("https://%s.%s", tenantName, server),
 		auth:       auth,
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		httpClient: httpClient,
 	}, nil
 }
 
