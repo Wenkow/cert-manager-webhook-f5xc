@@ -130,4 +130,4 @@ kubectl delete secret f5xc-api-token --namespace cert-manager
 
 ## Development
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for build, test, and release instructions.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for build and test instructions.
