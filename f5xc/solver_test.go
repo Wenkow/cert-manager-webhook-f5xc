@@ -2,11 +2,19 @@ package f5xc
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"math/big"
 	"testing"
+	"time"
 
 	acme "github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
 
 	"github.com/wenkow/cert-manager-webhook-f5xc/f5xc/client"
 )
@@ -69,7 +77,7 @@ func TestSolver_Present_NewRecord(t *testing.T) {
 		},
 	}
 	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, token string) (RRSetClient, error) { return mc, nil },
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
 		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
 	}
 	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
@@ -107,7 +115,7 @@ func TestSolver_Present_AppendToExisting(t *testing.T) {
 		},
 	}
 	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, token string) (RRSetClient, error) { return mc, nil },
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
 		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
 	}
 	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "new-value", map[string]any{
@@ -140,7 +148,7 @@ func TestSolver_CleanUp(t *testing.T) {
 		},
 	}
 	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, token string) (RRSetClient, error) { return mc, nil },
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
 		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
 	}
 	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
@@ -152,5 +160,70 @@ func TestSolver_CleanUp(t *testing.T) {
 	}
 	if !deleted {
 		t.Error("expected DeleteRRSet to be called")
+	}
+}
+
+func generateTestP12Bytes(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p12Data, err := pkcs12.Modern.Encode(key, cert, nil, "test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p12Data
+}
+
+func TestSolver_Present_CertAuth(t *testing.T) {
+	var createdRRSet client.RRSet
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return nil, nil
+		},
+		createRRSet: func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
+			createdRRSet = rrset
+			return &client.APIRRSet{}, nil
+		},
+	}
+
+	s := &Solver{
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) {
+			if _, ok := auth.(*client.TokenAuth); ok {
+				t.Error("expected CertAuth, got TokenAuth")
+			}
+			return mc, nil
+		},
+		secretReader: &fakeSecretReader{data: map[string][]byte{
+			"cert.p12": generateTestP12Bytes(t),
+			"password": []byte("test-password"),
+		}},
+	}
+
+	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
+		"tenantName": "my-tenant", "groupName": "cert-manager",
+		"certificateSecretRef": map[string]string{"name": "secret", "p12Key": "cert.p12", "passwordKey": "password"},
+	})
+
+	if err := s.Present(ch); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if createdRRSet.TXTRecord == nil {
+		t.Fatal("expected TXT record to be created")
 	}
 }
