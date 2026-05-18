@@ -28,8 +28,8 @@ type SecretReader interface {
 	GetSecretData(namespace, name string) (map[string][]byte, error)
 }
 
-// clientFactory constructs an RRSetClient from a config and API token.
-type clientFactory func(cfg *F5XCConfig, token string) (RRSetClient, error)
+// clientFactory constructs an RRSetClient from a config and authenticator.
+type clientFactory func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error)
 
 // Solver implements the cert-manager webhook.Solver interface for F5 XC DNS.
 type Solver struct {
@@ -123,29 +123,53 @@ func (s *Solver) CleanUp(ch *acme.ChallengeRequest) error {
 	return nil
 }
 
-// setup is shared logic: load config, read secret, build client.
+// setup is shared logic: load config, build auth, build client.
 func (s *Solver) setup(ch *acme.ChallengeRequest) (*F5XCConfig, RRSetClient, error) {
 	cfg, err := LoadConfig(ch.Config)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	secretData, err := s.secretReader.GetSecretData(ch.ResourceNamespace, cfg.APITokenSecretRef.Name)
+	auth, err := s.buildAuth(cfg, ch.ResourceNamespace)
 	if err != nil {
-		return nil, nil, fmt.Errorf("f5xc: reading secret %s/%s: %w", ch.ResourceNamespace, cfg.APITokenSecretRef.Name, err)
+		return nil, nil, err
 	}
 
-	tokenBytes, ok := secretData[cfg.APITokenSecretRef.Key]
-	if !ok {
-		return nil, nil, fmt.Errorf("f5xc: key %q not found in secret %s/%s", cfg.APITokenSecretRef.Key, ch.ResourceNamespace, cfg.APITokenSecretRef.Name)
-	}
-
-	cl, err := s.clientFactory(cfg, string(tokenBytes))
+	cl, err := s.clientFactory(cfg, auth)
 	if err != nil {
 		return nil, nil, fmt.Errorf("f5xc: creating API client: %w", err)
 	}
 
 	return cfg, cl, nil
+}
+
+func (s *Solver) buildAuth(cfg *F5XCConfig, namespace string) (client.Authenticator, error) {
+	if cfg.APITokenSecretRef != nil {
+		secretData, err := s.secretReader.GetSecretData(namespace, cfg.APITokenSecretRef.Name)
+		if err != nil {
+			return nil, fmt.Errorf("f5xc: reading secret %s/%s: %w", namespace, cfg.APITokenSecretRef.Name, err)
+		}
+		tokenBytes, ok := secretData[cfg.APITokenSecretRef.Key]
+		if !ok {
+			return nil, fmt.Errorf("f5xc: key %q not found in secret %s/%s", cfg.APITokenSecretRef.Key, namespace, cfg.APITokenSecretRef.Name)
+		}
+		return &client.TokenAuth{Token: string(tokenBytes)}, nil
+	}
+
+	ref := cfg.CertificateSecretRef
+	secretData, err := s.secretReader.GetSecretData(namespace, ref.Name)
+	if err != nil {
+		return nil, fmt.Errorf("f5xc: reading secret %s/%s: %w", namespace, ref.Name, err)
+	}
+	p12Data, ok := secretData[ref.P12Key]
+	if !ok {
+		return nil, fmt.Errorf("f5xc: key %q not found in secret %s/%s", ref.P12Key, namespace, ref.Name)
+	}
+	passwordBytes, ok := secretData[ref.PasswordKey]
+	if !ok {
+		return nil, fmt.Errorf("f5xc: key %q not found in secret %s/%s", ref.PasswordKey, namespace, ref.Name)
+	}
+	return client.NewCertAuth(p12Data, string(passwordBytes))
 }
 
 // unFQDN strips the trailing dot from a fully-qualified domain name.
@@ -162,8 +186,7 @@ func extractSubDomain(fqdn, zone string) string {
 	return subdomain
 }
 
-func defaultClientFactory(cfg *F5XCConfig, token string) (RRSetClient, error) {
-	auth := &client.TokenAuth{Token: token}
+func defaultClientFactory(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) {
 	return client.NewClient(cfg.TenantName, cfg.Server, auth)
 }
 
