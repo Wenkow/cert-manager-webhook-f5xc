@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Go](https://go.dev/dl/) 1.23+
+- [Go](https://go.dev/dl/) 1.26
 - [Docker](https://docs.docker.com/get-docker/)
 - [Helm](https://helm.sh/docs/intro/install/) 3
 
@@ -162,24 +162,7 @@ Deploy to a local [kind](https://kind.sigs.k8s.io/) cluster:
 
 ## Release Process
 
-Releases are automated via GitHub Actions. To publish a new version:
-
-1. Update the `version` field in `deploy/cert-manager-webhook-f5xc/Chart.yaml`
-   to match the version you are about to tag.
-
-2. Commit the version bump:
-
-   ```bash
-   git add deploy/cert-manager-webhook-f5xc/Chart.yaml
-   git commit -m "chore: bump chart version to 0.2.0"
-   ```
-
-3. Tag and push:
-
-   ```bash
-   git tag v0.2.0
-   git push --tags
-   ```
+Releases are automated via GitHub Actions. 
 
 The release workflow will automatically:
 
