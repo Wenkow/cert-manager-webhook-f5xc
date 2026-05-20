@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-20
+
+### Added
+
+- P12 certificate-based authentication as alternative to API token (`certificateSecretRef`)
+- When both auth methods are configured, token takes precedence
+- Troubleshooting section in DEVELOPMENT.md
+
 ## [0.2.4] - 2026-05-16
 
 ### Security
@@ -82,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.3.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.2.1...v0.2.2

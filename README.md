@@ -31,7 +31,7 @@ issuance for domains managed by F5 Distributed Cloud DNS.
    ```bash
    helm install cert-manager-webhook-f5xc \
      oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-     --version 0.2.4 \
+     --version 0.3.0 \
      --namespace cert-manager
    ```
 
@@ -82,7 +82,37 @@ spec:
 | `ttl` | No | `120` | TTL in seconds for DNS TXT records created during challenges. |
 | `apiTokenSecretRef.name` | Yes | - | Name of the Kubernetes Secret containing the F5 XC API token. |
 | `apiTokenSecretRef.key` | Yes | - | Key within the Secret that holds the API token value. |
-| `certificateSecretRef` | No | - | **Planned but not yet implemented.** Will support P12 certificate-based authentication in a future release. |
+| `certificateSecretRef` | No | - | P12 certificate authentication. See below. |
+
+<details>
+<summary>Using P12 certificate authentication instead of API token</summary>
+
+Create a Secret containing your P12 certificate and its password:
+
+```bash
+kubectl create secret generic f5xc-api-cert \
+  --namespace cert-manager \
+  --from-file=cert.p12=/path/to/your/certificate.p12 \
+  --from-literal=password=YOUR_P12_PASSWORD
+```
+
+Reference it in the Issuer config instead of `apiTokenSecretRef`:
+
+```yaml
+            config:
+              tenantName: my-tenant
+              groupName: "cert-manager"
+              certificateSecretRef:
+                name: f5xc-api-cert
+                p12Key: cert.p12
+                passwordKey: password
+```
+
+The `certificateSecretRef` requires three fields: `name` (Secret name), `p12Key` (key holding the PKCS#12 bundle), and `passwordKey` (key holding the P12 password).
+
+If both `apiTokenSecretRef` and `certificateSecretRef` are present, token authentication takes precedence.
+
+</details>
 
 ## Usage
 
@@ -117,7 +147,7 @@ When cert-manager processes this Certificate, it will:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.2.4 \
+  --version 0.3.0 \
   --namespace cert-manager
 ```
 

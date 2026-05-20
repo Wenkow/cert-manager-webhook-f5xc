@@ -53,6 +53,22 @@ func TestNewClient_DefaultServer(t *testing.T) {
 	}
 }
 
+type mockTransportAuth struct{}
+
+func (m *mockTransportAuth) Apply(req *http.Request) error { return nil }
+func (m *mockTransportAuth) Transport() *http.Transport     { return &http.Transport{} }
+
+func TestNewClient_WithTransportProvider(t *testing.T) {
+	auth := &mockTransportAuth{}
+	c, err := NewClient("acme", "", auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.httpClient.Transport == nil {
+		t.Error("expected client to use transport from TransportProvider")
+	}
+}
+
 func TestClient_AuthHeaderSent(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -76,10 +76,35 @@ spec:
 | `groupName` | Yes | - | RRSet group name in your F5 XC DNS zone. Must contain only lowercase letters, digits, and hyphens. |
 | `server` | No | `console.ves.volterra.io` | Override the F5 XC console domain. |
 | `ttl` | No | `120` | TTL in seconds for DNS TXT records. |
-| `apiTokenSecretRef.name` | Yes | - | Name of the Kubernetes Secret containing the F5 XC API token. |
-| `apiTokenSecretRef.key` | Yes | - | Key within the Secret that holds the API token value. |
+| `apiTokenSecretRef.name` | Yes* | - | Name of the Kubernetes Secret containing the F5 XC API token. |
+| `apiTokenSecretRef.key` | Yes* | - | Key within the Secret that holds the API token value. |
+| `certificateSecretRef.name` | Yes* | - | Name of the Secret containing the P12 certificate. |
+| `certificateSecretRef.p12Key` | Yes* | - | Key in the Secret holding the PKCS#12 bundle. |
+| `certificateSecretRef.passwordKey` | Yes* | - | Key in the Secret holding the P12 password. |
 
-> **Note:** Certificate-based authentication (`certificateSecretRef`) is planned but not yet implemented.
+*Exactly one of `apiTokenSecretRef` or `certificateSecretRef` is required. If both are present, token takes precedence.
+
+<details>
+<summary>Using P12 certificate authentication</summary>
+
+```bash
+kubectl create secret generic f5xc-api-cert \
+  --namespace cert-manager \
+  --from-file=cert.p12=/path/to/your/certificate.p12 \
+  --from-literal=password=YOUR_P12_PASSWORD
+```
+
+```yaml
+            config:
+              tenantName: my-tenant
+              groupName: "cert-manager"
+              certificateSecretRef:
+                name: f5xc-api-cert
+                p12Key: cert.p12
+                passwordKey: password
+```
+
+</details>
 
 ## Usage
 
