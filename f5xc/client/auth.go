@@ -51,7 +51,10 @@ func NewCertAuth(p12Data []byte, password string) (*CertAuth, error) {
 		tlsCert.Certificate = append(tlsCert.Certificate, ca.Raw)
 	}
 
-	caPool := x509.NewCertPool()
+	caPool, err := x509.SystemCertPool()
+	if err != nil {
+		caPool = x509.NewCertPool()
+	}
 	for _, ca := range caCerts {
 		caPool.AddCert(ca)
 	}
