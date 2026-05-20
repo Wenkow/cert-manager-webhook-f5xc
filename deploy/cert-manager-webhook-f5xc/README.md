@@ -88,7 +88,7 @@ spec:
 <summary>Using P12 certificate authentication</summary>
 
 ```bash
-kubectl create secret generic f5xc-cert \
+kubectl create secret generic f5xc-api-cert \
   --namespace cert-manager \
   --from-file=cert.p12=/path/to/your/certificate.p12 \
   --from-literal=password=YOUR_P12_PASSWORD
@@ -99,7 +99,7 @@ kubectl create secret generic f5xc-cert \
               tenantName: my-tenant
               groupName: "cert-manager"
               certificateSecretRef:
-                name: f5xc-cert
+                name: f5xc-api-cert
                 p12Key: cert.p12
                 passwordKey: password
 ```

@@ -31,7 +31,7 @@ issuance for domains managed by F5 Distributed Cloud DNS.
    ```bash
    helm install cert-manager-webhook-f5xc \
      oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-     --version 0.2.4 \
+     --version 0.3.0 \
      --namespace cert-manager
    ```
 
@@ -90,7 +90,7 @@ spec:
 Create a Secret containing your P12 certificate and its password:
 
 ```bash
-kubectl create secret generic f5xc-cert \
+kubectl create secret generic f5xc-api-cert \
   --namespace cert-manager \
   --from-file=cert.p12=/path/to/your/certificate.p12 \
   --from-literal=password=YOUR_P12_PASSWORD
@@ -103,7 +103,7 @@ Reference it in the Issuer config instead of `apiTokenSecretRef`:
               tenantName: my-tenant
               groupName: "cert-manager"
               certificateSecretRef:
-                name: f5xc-cert
+                name: f5xc-api-cert
                 p12Key: cert.p12
                 passwordKey: password
 ```
@@ -147,7 +147,7 @@ When cert-manager processes this Certificate, it will:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.2.4 \
+  --version 0.3.0 \
   --namespace cert-manager
 ```
 
