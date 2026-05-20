@@ -160,6 +160,36 @@ Deploy to a local [kind](https://kind.sigs.k8s.io/) cluster:
    make undeploy
    ```
 
+## Troubleshooting
+
+### Stuck challenge with finalizer
+
+If a challenge gets stuck in `pending` state and cannot be deleted (due to a
+finalizer that requires the webhook to clean up a DNS record), remove the
+finalizer manually:
+
+```bash
+kubectl patch challenge <NAME> -n cert-manager \
+  --type=merge -p '{"metadata":{"finalizers":[]}}'
+kubectl delete challenge <NAME> -n cert-manager
+```
+
+### Force certificate re-issuance
+
+To trigger a new certificate without deleting and recreating the resource:
+
+```bash
+kubectl annotate certificate <NAME> -n <NAMESPACE> cert-manager.io/renew=""
+```
+
+To start completely fresh, delete all related resources:
+
+```bash
+kubectl delete certificate <NAME> -n <NAMESPACE>
+kubectl delete secret <SECRET_NAME> -n <NAMESPACE>
+kubectl delete order --all -n cert-manager
+```
+
 ## Release Process
 
 Releases are automated via GitHub Actions. 
