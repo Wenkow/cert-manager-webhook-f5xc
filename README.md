@@ -31,7 +31,7 @@ issuance for domains managed by F5 Distributed Cloud DNS.
    ```bash
    helm install cert-manager-webhook-f5xc \
      oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-     --version 0.3.1 \
+     --version 0.3.2 \
      --namespace cert-manager
    ```
 
@@ -147,7 +147,7 @@ When cert-manager processes this Certificate, it will:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.3.1 \
+  --version 0.3.2 \
   --namespace cert-manager
 ```
 
