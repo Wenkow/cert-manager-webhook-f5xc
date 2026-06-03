@@ -10,32 +10,27 @@ permissions:
   packages: write
 
 jobs:
-  test:
-    name: Test
+  # The multi-arch image is built once by CI on the main commit. Here we only
+  # re-tag that existing image to the release tags (semver + latest) via
+  # `imagetools create` — no rebuild, no QEMU, runs in seconds. The image's
+  # existence already proves CI (lint + test + build) passed for this commit.
+  promote:
+    name: Promote image to release tags
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run unit tests
-        run: go test -v -race ./f5xc/...
-
-  docker:
-    name: Docker (multi-arch)
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata
+      - name: Resolve source image (built by CI on main)
+        id: source
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/wenkow/cert-manager-webhook-f5xc
+          tags: type=sha,prefix=sha-,format=short
+      - name: Compute release tags
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -45,21 +40,38 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
-      - name: Build and push multi-arch image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Wait for CI multi-arch image to be ready
+        env:
+          SOURCE: ${{ steps.source.outputs.tags }}
+        run: |
+          echo "Waiting for $SOURCE (built by CI on main) ..."
+          for i in $(seq 1 60); do
+            if docker buildx imagetools inspect "$SOURCE" >/dev/null 2>&1; then
+              echo "Found $SOURCE"
+              exit 0
+            fi
+            echo "Not ready ($i/60) — CI build on main must finish first; sleeping 15s."
+            sleep 15
+          done
+          echo "ERROR: $SOURCE not found after 15 min."
+          echo "Ensure the tagged commit is on main and its CI run finished."
+          exit 1
+      - name: Promote (re-tag multi-arch manifest, no rebuild)
+        env:
+          SOURCE: ${{ steps.source.outputs.tags }}
+          TARGET_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && args+=(-t "$t")
+          done <<< "$TARGET_TAGS"
+          echo "Promoting $SOURCE -> ${args[*]}"
+          docker buildx imagetools create "${args[@]}" "$SOURCE"
 
   helm:
     name: Helm Chart
     runs-on: ubuntu-latest
-    needs: [docker]
+    needs: [promote]
     steps:
       - uses: actions/checkout@v6
       - uses: azure/setup-helm@v5
@@ -93,7 +105,7 @@ jobs:
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [docker, helm]
+    needs: [promote, helm]
     steps:
       - uses: actions/checkout@v6
         with:
