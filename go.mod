@@ -2,6 +2,8 @@ module github.com/wenkow/cert-manager-webhook-f5xc
 
 go 1.26
 
+toolchain go1.26.4
+
 require (
 	github.com/cert-manager/cert-manager v1.17.2
 	k8s.io/apiextensions-apiserver v0.32.3
