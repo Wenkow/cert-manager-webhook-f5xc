@@ -132,6 +132,21 @@ helm upgrade cert-manager-webhook-f5xc \
   --namespace cert-manager
 ```
 
+## Logging
+
+The webhook logs through `klog`. By default only warnings and errors are emitted.
+Raise verbosity via `extraArgs` to see what the solver does with each challenge:
+
+```bash
+helm upgrade cert-manager-webhook-f5xc \
+  oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
+  --namespace cert-manager \
+  --set 'extraArgs={-v=2}'
+```
+
+- `-v=2` — operation-level logs (Present/CleanUp decisions: created, appended, skipped duplicate, removed value, deleted)
+- `-v=4` — per-request logs for every F5 XC API call (method, path, response status)
+
 ## Uninstall
 
 ```bash

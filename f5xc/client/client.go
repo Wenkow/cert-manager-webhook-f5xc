@@ -127,9 +127,12 @@ func (c *Client) ReplaceRRSet(ctx context.Context, zone, group, name, recordType
 }
 
 // DeleteRRSet removes a DNS record set.
+// Retries on transient 503 errors (code 14: "Previous DNS zone change is pending"),
+// which are common when several certificates are issued at once and zone changes
+// queue up — the same retry behavior as CreateRRSet/ReplaceRRSet.
 func (c *Client) DeleteRRSet(ctx context.Context, zone, group, name, recordType string) error {
 	path := fmt.Sprintf(rrsetPathPattern+"/%s/%s", zone, group, name, recordType)
-	return c.do(ctx, http.MethodDelete, path, nil, nil)
+	return c.doWithRetry(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // do performs an HTTP request with JSON marshalling, authentication, and response parsing.

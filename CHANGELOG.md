@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-16
+
+### Fixed
+
+- Certificate (P12) authentication no longer sets `RootCAs` from the client chain inside the P12. The F5 XC API server certificate is verified against the system trust store, removing a fallback (`SystemCertPool()`-or-empty) that could silently drop all public roots and fail server verification. The P12's CA certs remain attached to the client certificate chain presented during the mTLS handshake.
+- `DeleteRRSet` now retries on the transient error code 14 (`Previous DNS zone change is pending`), matching `CreateRRSet`/`ReplaceRRSet`. Issuing several certificates at once queues rapid zone changes, and the un-retried delete previously failed cleanup with that error.
+- The chart's container image tag now defaults to the chart `appVersion` instead of the floating `latest`. Previously a `helm upgrade` left the rendered Deployment unchanged (`:latest`), so no rollout happened and—combined with `pullPolicy: IfNotPresent`—no new image was pulled. Override `image.tag` to pin a specific tag.
+
 ## [0.4.0] - 2026-06-16
 
 ### Fixed
@@ -120,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.4.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.1...v0.3.2

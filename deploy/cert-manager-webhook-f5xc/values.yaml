@@ -6,7 +6,10 @@ certManager:
 
 image:
   repository: ghcr.io/wenkow/cert-manager-webhook-f5xc
-  tag: latest
+  # Defaults to the chart's appVersion (an immutable, versioned tag) so that a
+  # `helm upgrade` to a new chart version actually changes the image and triggers
+  # a rollout. Override only to pin a specific tag.
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Extra args passed to the webhook container. Use this to raise log verbosity,

@@ -266,6 +266,32 @@ func TestClient_DeleteRRSet(t *testing.T) {
 	}
 }
 
+func TestClient_DeleteRRSet_Retry503(t *testing.T) {
+	attempts := 0
+
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(APIError{Code: 14, Message: "Previous DNS zone change is pending"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	origInterval := retryInterval
+	retryInterval = 10 * time.Millisecond
+	t.Cleanup(func() { retryInterval = origInterval })
+
+	// Deleting must retry on code 14, just like Create/Replace — rapid zone changes
+	// when issuing many certificates at once make this common.
+	if err := c.DeleteRRSet(context.Background(), "example.com", "grp", "_acme-challenge", "TXT"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
 func TestClient_APIError(t *testing.T) {
 	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

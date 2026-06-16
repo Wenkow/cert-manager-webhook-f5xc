@@ -91,6 +91,19 @@ func TestCertAuth_Transport(t *testing.T) {
 	}
 }
 
+func TestCertAuth_RootCAsNil(t *testing.T) {
+	p12Data, password := generateTestP12(t)
+	auth, err := NewCertAuth(p12Data, password)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// RootCAs must stay nil so the server cert is verified against the system trust
+	// store; it must not be replaced by the client chain from the P12.
+	if auth.Transport().TLSClientConfig.RootCAs != nil {
+		t.Error("RootCAs should be nil (system trust store), got non-nil")
+	}
+}
+
 func TestCertAuth_Apply(t *testing.T) {
 	p12Data, password := generateTestP12(t)
 	auth, err := NewCertAuth(p12Data, password)

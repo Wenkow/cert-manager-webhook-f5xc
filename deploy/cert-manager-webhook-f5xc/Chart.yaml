@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.4.0
-appVersion: "0.4.0"
+version: 0.4.1
+appVersion: "0.4.1"
 type: application
 keywords:
   - cert-manager
@@ -21,7 +21,7 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.0
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.1
       platforms:
         - linux/amd64
         - linux/arm64
@@ -29,13 +29,11 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
     - kind: fixed
-      description: "Present is now idempotent — duplicate challenge values no longer cause HTTP 400 when multiple certificates are issued at once"
+      description: "Certificate (P12) auth no longer overrides RootCAs with the client chain — the F5 XC server cert is verified against the system trust store, removing a fallback that could break server verification"
     - kind: fixed
-      description: "CleanUp removes only its own challenge value instead of the whole RRSet, fixing finalizer deadlocks for shared FQDNs (apex + wildcard SANs)"
+      description: "DeleteRRSet retries on transient code 14 (zone change pending), matching create/replace — fixes cleanup failures when issuing several certificates at once"
     - kind: fixed
-      description: "CleanUp treats 'not found' (HTTP 404 / API code 5) as success, making it idempotent"
-    - kind: added
-      description: "Structured logging (klog) in Present/CleanUp and the F5 XC API client"
+      description: "Image tag now defaults to the chart appVersion instead of 'latest', so helm upgrade actually rolls out and pulls the new image"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io

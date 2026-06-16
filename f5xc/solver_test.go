@@ -210,6 +210,51 @@ func TestSolver_CleanUp_RemovesOnlyOwnValue(t *testing.T) {
 	}
 }
 
+// TestSolver_CleanUp_ThreeChallenges_RemovesOnlyVerified is the explicit
+// "3 challenges share one RRSet, one gets verified" case: cleaning up the
+// verified challenge must REPLACE the RRSet with the two still-pending values
+// and must NOT delete the whole record.
+func TestSolver_CleanUp_ThreeChallenges_RemovesOnlyVerified(t *testing.T) {
+	var replaced client.RRSet
+	deleteCalled := false
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return &client.APIRRSet{
+				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{
+					Name:   "_acme-challenge",
+					Values: []string{"key-1", "key-verified", "key-3"},
+				}},
+			}, nil
+		},
+		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
+			replaced = rrset
+			return &client.APIRRSet{}, nil
+		},
+		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
+			deleteCalled = true
+			return nil
+		},
+	}
+	// cert-manager cleans up only the verified challenge ("key-verified").
+	if err := tokenSolver(mc).CleanUp(f5xcChallenge("key-verified")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalled {
+		t.Fatal("DeleteRRSet must NOT be called while other challenges remain")
+	}
+	if replaced.TXTRecord == nil {
+		t.Fatal("expected ReplaceRRSet with remaining values")
+	}
+	got := replaced.TXTRecord.Values
+	remaining := map[string]bool{}
+	for _, v := range got {
+		remaining[v] = true
+	}
+	if len(got) != 2 || !remaining["key-1"] || !remaining["key-3"] {
+		t.Errorf("remaining values = %v, want [key-1 key-3] (verified one removed, others kept)", got)
+	}
+}
+
 // TestSolver_CleanUp_DeletesWhenLast covers Bug 2: when our value is the only one
 // left, the whole RRSet is deleted.
 func TestSolver_CleanUp_DeletesWhenLast(t *testing.T) {

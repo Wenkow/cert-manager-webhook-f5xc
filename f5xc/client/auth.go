@@ -2,7 +2,6 @@ package client
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"net/http"
 
@@ -51,17 +50,14 @@ func NewCertAuth(p12Data []byte, password string) (*CertAuth, error) {
 		tlsCert.Certificate = append(tlsCert.Certificate, ca.Raw)
 	}
 
-	caPool, err := x509.SystemCertPool()
-	if err != nil {
-		caPool = x509.NewCertPool()
-	}
-	for _, ca := range caCerts {
-		caPool.AddCert(ca)
-	}
-
+	// RootCAs is intentionally left nil so the server certificate of the F5 XC API
+	// endpoint is verified against the system trust store (it is signed by a public
+	// CA). The CA certs inside the P12 belong to the *client* chain and are attached
+	// to tlsCert above; adding them to RootCAs would be a category error, and the old
+	// SystemCertPool()-or-empty fallback could silently drop all public roots and fail
+	// server verification.
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
-		RootCAs:      caPool,
 	}
 
 	return &CertAuth{

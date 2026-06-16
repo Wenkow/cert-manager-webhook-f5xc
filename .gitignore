@@ -2,3 +2,8 @@ webhook
 bin/
 _out/
 .DS_Store
+
+# Local P12 mTLS integration test — not committed; loads live tenant credentials
+f5xc/integration_p12_test.go
+*.p12
+.f5xc-it.env
