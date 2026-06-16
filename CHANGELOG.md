@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-16
+
+### Fixed
+
+- `Present` is now idempotent: it no longer appends a challenge value that already exists in the RRSet. Previously, retries and multiple certificates issued at once produced duplicate values, which F5 XC rejects with HTTP 400 (`values should be unique`).
+- `CleanUp` now removes only its own challenge value instead of deleting the entire RRSet. When several challenges share one TXT record (e.g. apex + wildcard SANs), the old behavior clobbered the other values and sent the remaining challenge into a `not found` retry loop, deadlocking the finalizer.
+- `CleanUp` treats a missing record (HTTP 404 / F5 XC API code 5 `NOT_FOUND`) as success, making the operation idempotent.
+
+### Added
+
+- Structured logging (`klog`) in `Present`/`CleanUp` and the F5 XC API client. Run with `-v=2` for operation-level logs and `-v=4` for per-request/response logs.
+
 ## [0.3.3] - 2026-06-03
 
 ### Security
@@ -108,6 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.4.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.0...v0.3.1

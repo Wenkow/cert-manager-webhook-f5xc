@@ -377,3 +377,23 @@ func TestClient_Retry503_Exhausted(t *testing.T) {
 		t.Errorf("expected at least 2 attempts, got %d", attempts)
 	}
 }
+
+func TestIsNotFound(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"http 404", &APIError{StatusCode: 404}, true},
+		{"api code 5", &APIError{Code: 5}, true},
+		{"other api error", &APIError{StatusCode: 400, Code: 3}, false},
+		{"nil", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsNotFound(tc.err); got != tc.want {
+				t.Errorf("IsNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}

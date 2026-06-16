@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 
 	"github.com/wenkow/cert-manager-webhook-f5xc/f5xc/client"
 )
@@ -71,6 +72,8 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 	zone := unFQDN(ch.ResolvedZone)
 	subdomain := extractSubDomain(ch.ResolvedFQDN, ch.ResolvedZone)
 
+	klog.V(2).InfoS("f5xc: presenting challenge", "fqdn", ch.ResolvedFQDN, "zone", zone, "subdomain", subdomain)
+
 	existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
 	if err != nil {
 		return fmt.Errorf("f5xc: getting existing RRSet: %w", err)
@@ -88,10 +91,23 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 		if _, err := cl.CreateRRSet(ctx, zone, cfg.GroupName, rrset); err != nil {
 			return fmt.Errorf("f5xc: creating RRSet: %w", err)
 		}
+		klog.V(2).InfoS("f5xc: created RRSet", "subdomain", subdomain)
 		return nil
 	}
 
 	values := existing.RRSet.TXTRecord.Values
+
+	// Present must be idempotent: cert-manager may retry, and multiple challenges
+	// for the same FQDN (e.g. apex + wildcard SANs) share one TXT RRSet. Appending a
+	// value that is already present produces a duplicate, which F5 XC rejects with
+	// HTTP 400 ("values should be unique").
+	for _, v := range values {
+		if v == ch.Key {
+			klog.V(2).InfoS("f5xc: challenge value already present, skipping", "subdomain", subdomain)
+			return nil
+		}
+	}
+
 	values = append(values, ch.Key)
 	rrset := client.RRSet{
 		TTL: cfg.EffectiveTTL(),
@@ -103,6 +119,7 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 	if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
 		return fmt.Errorf("f5xc: replacing RRSet: %w", err)
 	}
+	klog.V(2).InfoS("f5xc: appended challenge value to RRSet", "subdomain", subdomain, "valueCount", len(values))
 	return nil
 }
 
@@ -117,9 +134,65 @@ func (s *Solver) CleanUp(ch *acme.ChallengeRequest) error {
 	zone := unFQDN(ch.ResolvedZone)
 	subdomain := extractSubDomain(ch.ResolvedFQDN, ch.ResolvedZone)
 
+	klog.V(2).InfoS("f5xc: cleaning up challenge", "fqdn", ch.ResolvedFQDN, "zone", zone, "subdomain", subdomain)
+
+	existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
+	if err != nil {
+		if client.IsNotFound(err) {
+			klog.V(2).InfoS("f5xc: RRSet already gone, nothing to clean up", "subdomain", subdomain)
+			return nil
+		}
+		return fmt.Errorf("f5xc: getting RRSet for cleanup: %w", err)
+	}
+	if existing == nil || existing.RRSet.TXTRecord == nil {
+		klog.V(2).InfoS("f5xc: RRSet already gone, nothing to clean up", "subdomain", subdomain)
+		return nil
+	}
+
+	// Remove only this challenge's value, preserving any other values belonging to
+	// concurrent challenges for the same FQDN (apex + wildcard SANs share one RRSet).
+	// Deleting the whole RRSet here would clobber those and send the other challenge
+	// into a "not found" retry loop.
+	remaining := make([]string, 0, len(existing.RRSet.TXTRecord.Values))
+	for _, v := range existing.RRSet.TXTRecord.Values {
+		if v != ch.Key {
+			remaining = append(remaining, v)
+		}
+	}
+
+	if len(remaining) == len(existing.RRSet.TXTRecord.Values) {
+		// Our value was not present — already cleaned up.
+		klog.V(2).InfoS("f5xc: challenge value not present, nothing to clean up", "subdomain", subdomain)
+		return nil
+	}
+
+	if len(remaining) > 0 {
+		rrset := client.RRSet{
+			TTL: cfg.EffectiveTTL(),
+			TXTRecord: &client.TXTRecord{
+				Name:   subdomain,
+				Values: remaining,
+			},
+		}
+		if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
+			if client.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("f5xc: replacing RRSet during cleanup: %w", err)
+		}
+		klog.V(2).InfoS("f5xc: removed challenge value, kept remaining", "subdomain", subdomain, "remaining", len(remaining))
+		return nil
+	}
+
+	// No values remain — delete the whole RRSet.
 	if err := cl.DeleteRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT"); err != nil {
+		if client.IsNotFound(err) {
+			klog.V(2).InfoS("f5xc: RRSet already deleted", "subdomain", subdomain)
+			return nil
+		}
 		return fmt.Errorf("f5xc: deleting RRSet: %w", err)
 	}
+	klog.V(2).InfoS("f5xc: deleted RRSet", "subdomain", subdomain)
 	return nil
 }
 

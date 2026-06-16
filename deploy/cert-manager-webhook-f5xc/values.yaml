@@ -9,6 +9,10 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# Extra args passed to the webhook container. Use this to raise log verbosity,
+# e.g. ["-v=2"] for operation logs or ["-v=4"] for per-request/response logs.
+extraArgs: []
+
 nameOverride: ""
 fullnameOverride: ""
 

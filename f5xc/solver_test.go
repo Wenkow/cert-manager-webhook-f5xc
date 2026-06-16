@@ -133,33 +133,137 @@ func TestSolver_Present_AppendToExisting(t *testing.T) {
 	}
 }
 
-func TestSolver_CleanUp(t *testing.T) {
-	deleted := false
+// f5xcChallenge builds a standard token-auth challenge request for the test tenant.
+func f5xcChallenge(key string) *acme.ChallengeRequest {
+	return challengeRequest("_acme-challenge.example.com.", "example.com.", key, map[string]any{
+		"tenantName": "my-tenant", "groupName": "cert-manager",
+		"apiTokenSecretRef": map[string]string{"name": "secret", "key": "api-token"},
+	})
+}
+
+func tokenSolver(mc *mockClient) *Solver {
+	return &Solver{
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
+		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
+	}
+}
+
+// TestSolver_Present_DuplicateValue covers Bug 1: Present must be idempotent and
+// must not append a value that is already in the RRSet (F5 XC rejects duplicates).
+func TestSolver_Present_DuplicateValue(t *testing.T) {
+	replaceCalled := false
+	createCalled := false
 	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return &client.APIRRSet{
+				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
+			}, nil
+		},
+		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
+			replaceCalled = true
+			return &client.APIRRSet{}, nil
+		},
+		createRRSet: func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
+			createCalled = true
+			return &client.APIRRSet{}, nil
+		},
+	}
+	if err := tokenSolver(mc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if replaceCalled {
+		t.Error("ReplaceRRSet should not be called when value already present")
+	}
+	if createCalled {
+		t.Error("CreateRRSet should not be called when value already present")
+	}
+}
+
+// TestSolver_CleanUp_RemovesOnlyOwnValue covers Bug 2: when other challenges share
+// the RRSet, cleanup must REPLACE with the remaining values, not delete everything.
+func TestSolver_CleanUp_RemovesOnlyOwnValue(t *testing.T) {
+	var replaced client.RRSet
+	deleteCalled := false
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return &client.APIRRSet{
+				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"other-key", "challenge-key"}}},
+			}, nil
+		},
+		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
+			replaced = rrset
+			return &client.APIRRSet{}, nil
+		},
 		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
-			deleted = true
-			if zone != "example.com" {
-				t.Errorf("zone = %s, want example.com", zone)
-			}
-			if name != "_acme-challenge" {
-				t.Errorf("name = %s, want _acme-challenge", name)
+			deleteCalled = true
+			return nil
+		},
+	}
+	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalled {
+		t.Error("DeleteRRSet must not be called when other values remain")
+	}
+	if replaced.TXTRecord == nil || len(replaced.TXTRecord.Values) != 1 || replaced.TXTRecord.Values[0] != "other-key" {
+		t.Errorf("replaced values = %v, want [other-key]", replaced.TXTRecord)
+	}
+}
+
+// TestSolver_CleanUp_DeletesWhenLast covers Bug 2: when our value is the only one
+// left, the whole RRSet is deleted.
+func TestSolver_CleanUp_DeletesWhenLast(t *testing.T) {
+	deleteCalled := false
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return &client.APIRRSet{
+				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
+			}, nil
+		},
+		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
+			deleteCalled = true
+			if zone != "example.com" || name != "_acme-challenge" {
+				t.Errorf("delete args zone=%s name=%s", zone, name)
 			}
 			return nil
 		},
 	}
-	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
-		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
-	}
-	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
-		"tenantName": "my-tenant", "groupName": "cert-manager",
-		"apiTokenSecretRef": map[string]string{"name": "secret", "key": "api-token"},
-	})
-	if err := s.CleanUp(ch); err != nil {
+	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !deleted {
-		t.Error("expected DeleteRRSet to be called")
+	if !deleteCalled {
+		t.Error("expected DeleteRRSet to be called for the last value")
+	}
+}
+
+// TestSolver_CleanUp_AlreadyGone covers Bug 3: a missing RRSet (GET returns nil) is
+// not an error — cleanup is idempotent.
+func TestSolver_CleanUp_AlreadyGone(t *testing.T) {
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return nil, nil
+		},
+	}
+	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("expected nil error when RRSet already gone, got: %v", err)
+	}
+}
+
+// TestSolver_CleanUp_DeleteNotFound covers Bug 3: an API code-5 (NOT_FOUND) error on
+// the final delete is swallowed.
+func TestSolver_CleanUp_DeleteNotFound(t *testing.T) {
+	mc := &mockClient{
+		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
+			return &client.APIRRSet{
+				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
+			}, nil
+		},
+		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
+			return &client.APIError{Code: 5, Message: "not found"}
+		},
+	}
+	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("expected nil error on not-found delete, got: %v", err)
 	}
 }
 

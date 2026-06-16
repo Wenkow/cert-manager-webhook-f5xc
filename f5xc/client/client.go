@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -20,6 +22,22 @@ const (
 // Retry settings for transient 503 errors (F5 XC code 14: "Previous DNS zone change is pending").
 // These are vars (not consts) so tests can override them.
 const retryableCode = 14
+
+// notFoundCode is the F5 XC API error code for "object not found" (gRPC NOT_FOUND).
+// It is returned (sometimes with a non-404 HTTP status) when an RRSet has already
+// been deleted, which must be treated as success for idempotent cleanup.
+const notFoundCode = 5
+
+// IsNotFound reports whether err represents a "record not found" response from the
+// F5 XC API, either via HTTP 404 or API error code 5 (NOT_FOUND). Callers use this
+// to make delete/replace operations idempotent.
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusNotFound || apiErr.Code == notFoundCode
+	}
+	return false
+}
 
 var (
 	retryInterval   = 2 * time.Second
@@ -139,6 +157,8 @@ func (c *Client) do(ctx context.Context, method, path string, payload, result in
 		return fmt.Errorf("f5xc: authentication failed: %w", err)
 	}
 
+	klog.V(4).InfoS("f5xc: sending API request", "method", method, "path", path)
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("f5xc: request failed: %w", err)
@@ -150,12 +170,16 @@ func (c *Client) do(ctx context.Context, method, path string, payload, result in
 		return fmt.Errorf("f5xc: failed to read response body: %w", err)
 	}
 
+	klog.V(4).InfoS("f5xc: received API response", "method", method, "path", path, "status", resp.StatusCode)
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr APIError
 		if err := json.Unmarshal(respBody, &apiErr); err != nil {
+			klog.V(2).InfoS("f5xc: API error response", "method", method, "path", path, "status", resp.StatusCode, "body", string(respBody))
 			return fmt.Errorf("f5xc: HTTP %d: %s", resp.StatusCode, string(respBody))
 		}
 		apiErr.StatusCode = resp.StatusCode
+		klog.V(2).InfoS("f5xc: API error response", "method", method, "path", path, "status", resp.StatusCode, "code", apiErr.Code, "message", apiErr.Message)
 		return &apiErr
 	}
 
