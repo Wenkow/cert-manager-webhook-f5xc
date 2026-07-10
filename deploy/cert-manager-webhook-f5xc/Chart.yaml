@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.4.1
-appVersion: "0.4.1"
+version: 0.4.2
+appVersion: "0.4.2"
 type: application
 keywords:
   - cert-manager
@@ -21,19 +21,17 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.1
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.2
       platforms:
         - linux/amd64
         - linux/arm64
         - linux/arm/v7
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
-    - kind: fixed
-      description: "Certificate (P12) auth no longer overrides RootCAs with the client chain — the F5 XC server cert is verified against the system trust store, removing a fallback that could break server verification"
-    - kind: fixed
-      description: "DeleteRRSet retries on transient code 14 (zone change pending), matching create/replace — fixes cleanup failures when issuing several certificates at once"
-    - kind: fixed
-      description: "Image tag now defaults to the chart appVersion instead of 'latest', so helm upgrade actually rolls out and pulls the new image"
+    - kind: security
+      description: "Upgrade software.sslmate.com/src/go-pkcs12 to v0.7.2 — fixes GO-2026-5052 (reached via P12 certificate authentication in NewCertAuth)"
+    - kind: security
+      description: "Upgrade Go toolchain to 1.26.5 — fixes GO-2026-5856 (Encrypted Client Hello privacy leak in crypto/tls)"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io

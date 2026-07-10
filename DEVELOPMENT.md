@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Go](https://go.dev/dl/) 1.26.4
+- [Go](https://go.dev/dl/) 1.26.5
 - [Docker](https://docs.docker.com/get-docker/)
 - [Helm](https://helm.sh/docs/intro/install/) 3
 
