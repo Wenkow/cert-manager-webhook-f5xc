@@ -14,7 +14,7 @@ issuance for domains managed by F5 Distributed Cloud DNS.
 - Kubernetes cluster with [cert-manager](https://cert-manager.io/docs/installation/) installed
 - Helm 3.8+
 - An F5 Distributed Cloud tenant with API access
-- An F5 XC API token (generated from the F5 XC console)
+- An F5 XC API token **or** a P12 client certificate (both generated from the F5 XC console)
 
 ## Installation
 
