@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.4.2
-appVersion: "0.4.2"
+version: 0.4.3
+appVersion: "0.4.3"
 type: application
 keywords:
   - cert-manager
@@ -21,7 +21,7 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.2
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.4.3
       platforms:
         - linux/amd64
         - linux/arm64
@@ -29,9 +29,11 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
     - kind: security
-      description: "Upgrade software.sslmate.com/src/go-pkcs12 to v0.7.2 — fixes GO-2026-5052 (reached via P12 certificate authentication in NewCertAuth)"
+      description: "Upgrade golang.org/x/text to v0.40.0 — fixes CVE-2026-56852 / GO-2026-5970 (infinite loop on invalid UTF-8 in norm.Iter)"
     - kind: security
-      description: "Upgrade Go toolchain to 1.26.5 — fixes GO-2026-5856 (Encrypted Client Hello privacy leak in crypto/tls)"
+      description: "Upgrade golang.org/x/net to v0.57.0 — fixes CVE-2026-46600 (panic parsing invalid SVCB/HTTPS DNS resource records)"
+    - kind: security
+      description: "Upgrade golang.org/x/crypto to v0.54.0 (hygiene)"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io

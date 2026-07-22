@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-07-22
+
+### Security
+
+- Upgrade `golang.org/x/text` to v0.40.0 — fixes CVE-2026-56852 / GO-2026-5970 (a `norm.Iter` can enter an infinite loop on input containing invalid UTF-8 bytes). This was the only advisory govulncheck reported as reachable from this module.
+- Upgrade `golang.org/x/net` to v0.57.0 — fixes CVE-2026-46600 (parsing an invalid SVCB or HTTPS resource record can panic in `dns/dnsmessage` when a parameter value overflows the message buffer). Not reached by this webhook's code; upgraded to clear the module-level advisory.
+- Upgrade `golang.org/x/crypto` to v0.54.0 for hygiene. The GO-2026-5932 advisory for the unmaintained `openpgp` package remains reported but has no fix and `openpgp` is not compiled into this binary.
+
 ## [0.4.2] - 2026-07-10
 
 ### Security
@@ -135,6 +143,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.4.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.3.3...v0.4.0
