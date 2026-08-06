@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-06
+
+### Changed
+
+- Build against cert-manager v1.21.1 and `k8s.io/*` v0.36.3 (was cert-manager v1.17.2 / k8s v0.32.3). Supported Kubernetes range is now 1.33–1.36; still compatible with older cert-manager controllers.
+
+### Security
+
+- The upgrade pulls `github.com/google/cel-go` v0.29.0, fixing GHSA-gcjh-h69q-9w9g.
+
 ## [0.4.4] - 2026-08-06
 
 ### Security
@@ -151,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.5.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.1...v0.4.2
