@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-08-06
+
+### Security
+
+- Upgrade `google.golang.org/grpc` to v1.83.0 — fixes GO-2026-6061 (vulnerabilities in the xDS RBAC authorization engine and the HTTP/2 transport server). Reached through the webhook's gRPC transport.
+- Upgrade `go.opentelemetry.io/otel` (and `metric`/`trace`/`sdk`) to v1.45.0 — fixes GO-2026-5158 (baggage parsing no longer caps raw header length).
+- Upgrade `github.com/klauspost/compress` to v1.18.7 — clears GO-2026-5841 (not reached by this webhook's code; upgraded to keep the module tree clean).
+
 ## [0.4.3] - 2026-07-22
 
 ### Security
@@ -143,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.4.4]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.0...v0.4.1
