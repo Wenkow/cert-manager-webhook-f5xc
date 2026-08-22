@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-22
+
+### Security
+
+- Upgrade Go toolchain to 1.26.6 — fixes 6 reachable stdlib advisories: GO-2026-6218 (`net/url`), GO-2026-6091 (`html/template`), GO-2026-6090 (`crypto/tls`), GO-2026-6089 (`net/http`), GO-2026-5972 (`encoding/asn1`, reached via P12 decode), and GO-2026-5026 (`net/http`/idna).
+- Bump `go.etcd.io/etcd/client/pkg/v3` to v3.6.14 (GO-2026-6107) and `github.com/google/cel-go` to v0.30.0 (GO-2026-6094) — not reached by this webhook's code; upgraded to clear the advisories. The GO-2026-5932 `golang.org/x/crypto/openpgp` advisory remains reported (no fix available; `openpgp` is not compiled into this binary).
+
 ## [0.5.0] - 2026-08-06
 
 ### Changed
@@ -161,6 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.5.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.2...v0.4.3
