@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-03
+
+### Security
+
+- Upgrade `golang.org/x/crypto` to v0.56.0 — clears GO-2026-6355, GO-2026-6354 (DoS on deadlocked SSH channels) and GO-2026-6303 (source-address option not enforced for non-public-key auth). All three are in the `ssh` package, which is not compiled into this binary; upgraded to clear the module-level advisories. The GO-2026-5932 `openpgp` advisory remains reported (no fix available; also not compiled in).
+
 ## [0.5.1] - 2026-08-22
 
 ### Security
@@ -168,6 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.5.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.4.3...v0.4.4
