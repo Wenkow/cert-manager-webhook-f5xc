@@ -25,7 +25,9 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.12.2
+          # Must be built with a Go >= the go directive in go.mod, or
+          # golangci-lint refuses to start. v2.13.2 is built with Go 1.27.
+          version: v2.13.2
 
   test:
     name: Test
