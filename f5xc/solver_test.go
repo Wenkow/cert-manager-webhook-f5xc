@@ -225,6 +225,65 @@ func TestSolver_CleanUp_ReadBackRecoversLostDelete(t *testing.T) {
 	}
 }
 
+// A GET failing with anything other than not-found must abort immediately rather
+// than burn the retry budget or write blindly.
+func TestSolver_Present_GetErrorFailsFast(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.getErr, fc.getErrN = &client.APIError{StatusCode: 500, Message: "boom"}, 100
+	err := fakeSolver(fc).Present(f5xcChallenge("challenge-key"))
+	if err == nil {
+		t.Fatal("expected error when GET fails")
+	}
+	if fc.creates != 0 || fc.replaces != 0 {
+		t.Errorf("no write expected; creates=%d replaces=%d", fc.creates, fc.replaces)
+	}
+}
+
+// Some F5 XC responses signal absence as API code 5 rather than HTTP 404. The loop
+// must read that as "record absent" and create it, not as a hard failure.
+func TestSolver_Present_GetNotFoundMeansAbsent(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.getErr, fc.getErrN = &client.APIError{Code: 5, Message: "not found"}, 1
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("values = %v, want [challenge-key]", got)
+	}
+}
+
+func TestSolver_Present_CreateErrorPropagates(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.createErr = &client.APIError{StatusCode: 400, Message: "bad request"}
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err == nil {
+		t.Fatal("expected error when create fails")
+	}
+}
+
+func TestSolver_Present_ReplaceErrorPropagates(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"other-key"}}}
+	fc.replaceErr = &client.APIError{StatusCode: 400, Message: "bad request"}
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err == nil {
+		t.Fatal("expected error when replace fails")
+	}
+}
+
+// A delete failing for a reason other than not-found is a real failure.
+func TestSolver_CleanUp_DeleteErrorPropagates(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}}
+	fc.deleteErr = &client.APIError{StatusCode: 500, Message: "boom"}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err == nil {
+		t.Fatal("expected error when delete fails for a non-not-found reason")
+	}
+}
+
 func generateTestP12Bytes(t *testing.T) []byte {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -296,6 +355,13 @@ type fakeRRSetClient struct {
 	// deleteErr, when set, is returned by DeleteRRSet after the delete is applied,
 	// so tests can exercise how the caller treats a delete that reports not-found.
 	deleteErr error
+	// getErr is returned by the next getErrN GetRRSet calls, letting tests drive
+	// both the fail-fast path and the not-found-means-absent path.
+	getErr  error
+	getErrN int
+	// createErr/replaceErr, when set, fail every corresponding write.
+	createErr  error
+	replaceErr error
 }
 
 func newFakeRRSetClient() *fakeRRSetClient {
@@ -306,6 +372,10 @@ func (f *fakeRRSetClient) GetRRSet(_ context.Context, _, _, name, _ string) (*cl
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gets++
+	if f.getErrN > 0 {
+		f.getErrN--
+		return nil, f.getErr
+	}
 	rr, ok := f.records[name]
 	if !ok {
 		return nil, nil // not found, mirrors client.GetRRSet
@@ -322,6 +392,9 @@ func (f *fakeRRSetClient) CreateRRSet(_ context.Context, _, _ string, rrset clie
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates++
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
 	if f.loseWrites > 0 {
 		f.loseWrites--
 		return &client.APIRRSet{}, nil
@@ -334,6 +407,9 @@ func (f *fakeRRSetClient) ReplaceRRSet(_ context.Context, _, _, name, _ string, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.replaces++
+	if f.replaceErr != nil {
+		return nil, f.replaceErr
+	}
 	if f.loseWrites > 0 {
 		f.loseWrites--
 		return &client.APIRRSet{}, nil
