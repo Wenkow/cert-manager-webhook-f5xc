@@ -48,10 +48,10 @@ func TestLoadConfig_Valid(t *testing.T) {
 
 func TestLoadConfig_WithOptionalFields(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
-		"tenantName": "my-tenant",
-		"groupName":  "cert-manager",
-		"server":     "custom.server.io",
-		"ttl":        60,
+		"tenantName":        "my-tenant",
+		"groupName":         "cert-manager",
+		"server":            "custom.server.io",
+		"ttl":               60,
 		"apiTokenSecretRef": map[string]string{"name": "f5xc-creds", "key": "api-token"},
 	})
 	cfg, err := LoadConfig(cfgJSON)
@@ -75,7 +75,7 @@ func TestLoadConfig_NilJSON(t *testing.T) {
 
 func TestLoadConfig_MissingTenant(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
-		"groupName": "cert-manager",
+		"groupName":         "cert-manager",
 		"apiTokenSecretRef": map[string]string{"name": "s", "key": "k"},
 	})
 	_, err := LoadConfig(cfgJSON)
@@ -86,7 +86,7 @@ func TestLoadConfig_MissingTenant(t *testing.T) {
 
 func TestLoadConfig_MissingGroupName(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
-		"tenantName": "my-tenant",
+		"tenantName":        "my-tenant",
 		"apiTokenSecretRef": map[string]string{"name": "s", "key": "k"},
 	})
 	_, err := LoadConfig(cfgJSON)
@@ -108,8 +108,8 @@ func TestLoadConfig_NoAuth(t *testing.T) {
 
 func TestLoadConfig_BothAuth_PrefersToken(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
-		"tenantName": "my-tenant",
-		"groupName":  "cert-manager",
+		"tenantName":           "my-tenant",
+		"groupName":            "cert-manager",
 		"apiTokenSecretRef":    map[string]string{"name": "s", "key": "k"},
 		"certificateSecretRef": map[string]string{"name": "c", "p12Key": "p", "passwordKey": "pw"},
 	})
@@ -147,8 +147,8 @@ func TestLoadConfig_CertAuth_Valid(t *testing.T) {
 
 func TestLoadConfig_CertAuth_MissingFields(t *testing.T) {
 	cfgJSON := makeConfig(t, map[string]any{
-		"tenantName": "my-tenant",
-		"groupName":  "cert-manager",
+		"tenantName":           "my-tenant",
+		"groupName":            "cert-manager",
 		"certificateSecretRef": map[string]string{"name": "f5xc-cert"},
 	})
 	_, err := LoadConfig(cfgJSON)

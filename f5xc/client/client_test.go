@@ -56,7 +56,7 @@ func TestNewClient_DefaultServer(t *testing.T) {
 type mockTransportAuth struct{}
 
 func (m *mockTransportAuth) Apply(req *http.Request) error { return nil }
-func (m *mockTransportAuth) Transport() *http.Transport     { return &http.Transport{} }
+func (m *mockTransportAuth) Transport() *http.Transport    { return &http.Transport{} }
 
 func TestNewClient_WithTransportProvider(t *testing.T) {
 	auth := &mockTransportAuth{}
