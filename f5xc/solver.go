@@ -209,8 +209,8 @@ func lockKey(zone, group, subdomain string) string {
 	return zone + "/" + group + "/" + subdomain + "/TXT"
 }
 
-// currentValues extracts the TXT values from a GET result (nil when absent).
-func currentValues(existing *client.APIRRSet) []string {
+// txtValues extracts the TXT values from a GET result (nil when absent).
+func txtValues(existing *client.APIRRSet) []string {
 	if existing == nil || existing.RRSet.TXTRecord == nil {
 		return nil
 	}
@@ -252,7 +252,7 @@ func (s *Solver) reconcile(
 			existing = nil
 		}
 
-		if satisfied(currentValues(existing)) {
+		if satisfied(txtValues(existing)) {
 			return nil
 		}
 

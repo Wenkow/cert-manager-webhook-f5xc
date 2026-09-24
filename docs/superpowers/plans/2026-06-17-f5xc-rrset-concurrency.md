@@ -18,7 +18,7 @@ Design spec: `docs/superpowers/specs/2026-06-17-f5xc-rrset-concurrency-design.md
 
 - **Create** `f5xc/keyedmutex.go` — `keyedMutex`: per-key mutual exclusion, refcounted, zero-value usable. Single responsibility: locking.
 - **Create** `f5xc/keyedmutex_test.go` — unit tests for `keyedMutex` (exclusion, independence, no leak), run under `-race`.
-- **Modify** `f5xc/solver.go` — add `locks keyedMutex` field to `Solver`; add `verifyAttempts`/`verifyInterval` vars; add `rrsetOp` type, `lockKey`/`currentValues`/`containsValue` helpers and the `reconcile` method; rewrite `Present`/`CleanUp` to delegate to `reconcile`.
+- **Modify** `f5xc/solver.go` — add `locks keyedMutex` field to `Solver`; add `verifyAttempts`/`verifyInterval` vars; add `rrsetOp` type, `lockKey`/`txtValues`/`containsValue` helpers and the `reconcile` method; rewrite `Present`/`CleanUp` to delegate to `reconcile`.
 - **Modify** `f5xc/solver_test.go` — add a stateful in-memory `fakeRRSetClient` and a `fastReconcile` helper; repoint existing `Present`/`CleanUp` tests onto the fake; add read-back retry, exhaustion, and the headline lost-update concurrency tests.
 - **Modify** `f5xc/integration_p12_test.go` (gitignored, build tag `integration`) — add a live concurrent-`Present` scenario.
 
@@ -491,8 +491,8 @@ func lockKey(zone, group, subdomain string) string {
 	return zone + "/" + group + "/" + subdomain + "/TXT"
 }
 
-// currentValues extracts the TXT values from a GET result (nil when absent).
-func currentValues(existing *client.APIRRSet) []string {
+// txtValues extracts the TXT values from a GET result (nil when absent).
+func txtValues(existing *client.APIRRSet) []string {
 	if existing == nil || existing.RRSet.TXTRecord == nil {
 		return nil
 	}
@@ -534,7 +534,7 @@ func (s *Solver) reconcile(
 			existing = nil
 		}
 
-		if satisfied(currentValues(existing)) {
+		if satisfied(txtValues(existing)) {
 			return nil
 		}
 
@@ -1047,4 +1047,4 @@ Cutting a release (version bump + tag) is done by the user. When asked, follow t
 
 - **Spec coverage:** keyed mutex (Task 1), unified reconcile loop + Present/CleanUp via satisfied/mutate (Tasks 3–4), error handling + bounded read-back + not-found (Task 3 reconcile + tests), eventual-consistency tolerance via re-apply (Tasks 3–4 read-back tests), constants `verifyAttempts`/`verifyInterval` (Task 2), stateful fake + repointed tests (Tasks 2–4), headline lost-update test (Task 5), live concurrent scenario (Task 6). All spec sections map to a task.
 - **No placeholders:** every code and command step is concrete.
-- **Type consistency:** `reconcile(ctx, cl, cfg, zone, subdomain, satisfied, mutate)`, `rrsetOp{opCreate,opReplace,opDelete}`, helpers `lockKey`/`currentValues`/`containsValue`, `keyedMutex.Lock/Unlock/len`, fake methods matching the `RRSetClient` interface signatures, and `verifyAttempts`/`verifyInterval` are used identically across tasks.
+- **Type consistency:** `reconcile(ctx, cl, cfg, zone, subdomain, satisfied, mutate)`, `rrsetOp{opCreate,opReplace,opDelete}`, helpers `lockKey`/`txtValues`/`containsValue`, `keyedMutex.Lock/Unlock/len`, fake methods matching the `RRSetClient` interface signatures, and `verifyAttempts`/`verifyInterval` are used identically across tasks.
