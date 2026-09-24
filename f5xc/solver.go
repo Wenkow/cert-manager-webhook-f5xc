@@ -108,7 +108,9 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 	return s.reconcile(ctx, cl, cfg, zone, subdomain, satisfied, mutate)
 }
 
-// CleanUp removes the TXT record for the ACME challenge.
+// CleanUp removes this challenge's value from the TXT record, preserving any other
+// values (concurrent challenges for the same FQDN), deleting the record only when no
+// values remain. Idempotent and safe under concurrency.
 func (s *Solver) CleanUp(ch *acme.ChallengeRequest) error {
 	cfg, cl, err := s.setup(ch)
 	if err != nil {
@@ -121,64 +123,27 @@ func (s *Solver) CleanUp(ch *acme.ChallengeRequest) error {
 
 	klog.V(2).InfoS("f5xc: cleaning up challenge", "fqdn", ch.ResolvedFQDN, "zone", zone, "subdomain", subdomain)
 
-	existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
-	if err != nil {
-		if client.IsNotFound(err) {
-			klog.V(2).InfoS("f5xc: RRSet already gone, nothing to clean up", "subdomain", subdomain)
-			return nil
-		}
-		return fmt.Errorf("f5xc: getting RRSet for cleanup: %w", err)
+	satisfied := func(values []string) bool {
+		return !containsValue(values, ch.Key)
 	}
-	if existing == nil || existing.RRSet.TXTRecord == nil {
-		klog.V(2).InfoS("f5xc: RRSet already gone, nothing to clean up", "subdomain", subdomain)
-		return nil
-	}
-
-	// Remove only this challenge's value, preserving any other values belonging to
-	// concurrent challenges for the same FQDN (apex + wildcard SANs share one RRSet).
-	// Deleting the whole RRSet here would clobber those and send the other challenge
-	// into a "not found" retry loop.
-	remaining := make([]string, 0, len(existing.RRSet.TXTRecord.Values))
-	for _, v := range existing.RRSet.TXTRecord.Values {
-		if v != ch.Key {
-			remaining = append(remaining, v)
-		}
-	}
-
-	if len(remaining) == len(existing.RRSet.TXTRecord.Values) {
-		// Our value was not present — already cleaned up.
-		klog.V(2).InfoS("f5xc: challenge value not present, nothing to clean up", "subdomain", subdomain)
-		return nil
-	}
-
-	if len(remaining) > 0 {
-		rrset := client.RRSet{
-			TTL: cfg.EffectiveTTL(),
-			TXTRecord: &client.TXTRecord{
-				Name:   subdomain,
-				Values: remaining,
-			},
-		}
-		if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
-			if client.IsNotFound(err) {
-				return nil
+	mutate := func(existing *client.APIRRSet) (rrsetOp, client.RRSet) {
+		// Reached only when existing contains ch.Key (otherwise satisfied is true).
+		remaining := make([]string, 0, len(existing.RRSet.TXTRecord.Values))
+		for _, v := range existing.RRSet.TXTRecord.Values {
+			if v != ch.Key {
+				remaining = append(remaining, v)
 			}
-			return fmt.Errorf("f5xc: replacing RRSet during cleanup: %w", err)
 		}
-		klog.V(2).InfoS("f5xc: removed challenge value, kept remaining", "subdomain", subdomain, "remaining", len(remaining))
-		return nil
+		if len(remaining) == 0 {
+			return opDelete, client.RRSet{}
+		}
+		return opReplace, client.RRSet{
+			TTL:       cfg.EffectiveTTL(),
+			TXTRecord: &client.TXTRecord{Name: subdomain, Values: remaining},
+		}
 	}
 
-	// No values remain — delete the whole RRSet.
-	if err := cl.DeleteRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT"); err != nil {
-		if client.IsNotFound(err) {
-			klog.V(2).InfoS("f5xc: RRSet already deleted", "subdomain", subdomain)
-			return nil
-		}
-		return fmt.Errorf("f5xc: deleting RRSet: %w", err)
-	}
-	klog.V(2).InfoS("f5xc: deleted RRSet", "subdomain", subdomain)
-	return nil
+	return s.reconcile(ctx, cl, cfg, zone, subdomain, satisfied, mutate)
 }
 
 // setup is shared logic: load config, build auth, build client.

@@ -20,26 +20,6 @@ import (
 	"github.com/wenkow/cert-manager-webhook-f5xc/f5xc/client"
 )
 
-type mockClient struct {
-	getRRSet     func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error)
-	createRRSet  func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error)
-	replaceRRSet func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error)
-	deleteRRSet  func(ctx context.Context, zone, group, name, recordType string) error
-}
-
-func (m *mockClient) GetRRSet(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-	return m.getRRSet(ctx, zone, group, name, recordType)
-}
-func (m *mockClient) CreateRRSet(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
-	return m.createRRSet(ctx, zone, group, rrset)
-}
-func (m *mockClient) ReplaceRRSet(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-	return m.replaceRRSet(ctx, zone, group, name, recordType, rrset)
-}
-func (m *mockClient) DeleteRRSet(ctx context.Context, zone, group, name, recordType string) error {
-	return m.deleteRRSet(ctx, zone, group, name, recordType)
-}
-
 func challengeRequest(fqdn, zone, key string, config map[string]any) *acme.ChallengeRequest {
 	raw, _ := json.Marshal(config)
 	return &acme.ChallengeRequest{
@@ -148,146 +128,100 @@ func f5xcChallenge(key string) *acme.ChallengeRequest {
 	})
 }
 
-func tokenSolver(mc *mockClient) *Solver {
-	return &Solver{
-		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
-		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
-	}
-}
-
 // TestSolver_Present_DuplicateValue covers Bug 1: Present must be idempotent and
 // must not append a value that is already in the RRSet (F5 XC rejects duplicates).
 
-// TestSolver_CleanUp_RemovesOnlyOwnValue covers Bug 2: when other challenges share
-// the RRSet, cleanup must REPLACE with the remaining values, not delete everything.
 func TestSolver_CleanUp_RemovesOnlyOwnValue(t *testing.T) {
-	var replaced client.RRSet
-	deleteCalled := false
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"other-key", "challenge-key"}}},
-			}, nil
-		},
-		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-			replaced = rrset
-			return &client.APIRRSet{}, nil
-		},
-		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
-			deleteCalled = true
-			return nil
-		},
-	}
-	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"other-key", "challenge-key"}}}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if deleteCalled {
-		t.Error("DeleteRRSet must not be called when other values remain")
+	got := fc.values("_acme-challenge")
+	if len(got) != 1 || got[0] != "other-key" {
+		t.Fatalf("values = %v, want [other-key]", got)
 	}
-	if replaced.TXTRecord == nil || len(replaced.TXTRecord.Values) != 1 || replaced.TXTRecord.Values[0] != "other-key" {
-		t.Errorf("replaced values = %v, want [other-key]", replaced.TXTRecord)
+	if fc.deletes != 0 {
+		t.Errorf("deletes = %d, want 0 (other value remains)", fc.deletes)
 	}
 }
 
-// TestSolver_CleanUp_ThreeChallenges_RemovesOnlyVerified is the explicit
-// "3 challenges share one RRSet, one gets verified" case: cleaning up the
-// verified challenge must REPLACE the RRSet with the two still-pending values
-// and must NOT delete the whole record.
 func TestSolver_CleanUp_ThreeChallenges_RemovesOnlyVerified(t *testing.T) {
-	var replaced client.RRSet
-	deleteCalled := false
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{
-					Name:   "_acme-challenge",
-					Values: []string{"key-1", "key-verified", "key-3"},
-				}},
-			}, nil
-		},
-		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-			replaced = rrset
-			return &client.APIRRSet{}, nil
-		},
-		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
-			deleteCalled = true
-			return nil
-		},
-	}
-	// cert-manager cleans up only the verified challenge ("key-verified").
-	if err := tokenSolver(mc).CleanUp(f5xcChallenge("key-verified")); err != nil {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"key-1", "key-verified", "key-3"}}}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("key-verified")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if deleteCalled {
-		t.Fatal("DeleteRRSet must NOT be called while other challenges remain")
-	}
-	if replaced.TXTRecord == nil {
-		t.Fatal("expected ReplaceRRSet with remaining values")
-	}
-	got := replaced.TXTRecord.Values
+	got := fc.values("_acme-challenge")
 	remaining := map[string]bool{}
 	for _, v := range got {
 		remaining[v] = true
 	}
 	if len(got) != 2 || !remaining["key-1"] || !remaining["key-3"] {
-		t.Errorf("remaining values = %v, want [key-1 key-3] (verified one removed, others kept)", got)
+		t.Errorf("values = %v, want [key-1 key-3]", got)
+	}
+	if fc.deletes != 0 {
+		t.Errorf("deletes = %d, want 0", fc.deletes)
 	}
 }
 
-// TestSolver_CleanUp_DeletesWhenLast covers Bug 2: when our value is the only one
-// left, the whole RRSet is deleted.
 func TestSolver_CleanUp_DeletesWhenLast(t *testing.T) {
-	deleteCalled := false
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
-			}, nil
-		},
-		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
-			deleteCalled = true
-			if zone != "example.com" || name != "_acme-challenge" {
-				t.Errorf("delete args zone=%s name=%s", zone, name)
-			}
-			return nil
-		},
-	}
-	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !deleteCalled {
-		t.Error("expected DeleteRRSet to be called for the last value")
+	if got := fc.values("_acme-challenge"); got != nil {
+		t.Fatalf("expected record deleted, values = %v", got)
+	}
+	if fc.deletes != 1 {
+		t.Errorf("deletes = %d, want 1", fc.deletes)
 	}
 }
 
-// TestSolver_CleanUp_AlreadyGone covers Bug 3: a missing RRSet (GET returns nil) is
-// not an error — cleanup is idempotent.
 func TestSolver_CleanUp_AlreadyGone(t *testing.T) {
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return nil, nil
-		},
+	fastReconcile(t)
+	fc := newFakeRRSetClient() // empty
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("expected nil error when record absent, got: %v", err)
 	}
-	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
-		t.Fatalf("expected nil error when RRSet already gone, got: %v", err)
+	if fc.deletes != 0 || fc.replaces != 0 {
+		t.Errorf("no write expected; deletes=%d replaces=%d", fc.deletes, fc.replaces)
 	}
 }
 
-// TestSolver_CleanUp_DeleteNotFound covers Bug 3: an API code-5 (NOT_FOUND) error on
-// the final delete is swallowed.
-func TestSolver_CleanUp_DeleteNotFound(t *testing.T) {
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
-			}, nil
-		},
-		deleteRRSet: func(ctx context.Context, zone, group, name, recordType string) error {
-			return &client.APIError{Code: 5, Message: "not found"}
-		},
-	}
-	if err := tokenSolver(mc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+// A delete that reports "not found" means the record is already gone, so the
+// reconcile loop must tolerate the error rather than fail the challenge.
+func TestSolver_CleanUp_DeleteNotFoundTolerated(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}}
+	fc.deleteErr = &client.APIError{Code: 5, Message: "not found"}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("expected nil error on not-found delete, got: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); got != nil {
+		t.Fatalf("expected record gone, values = %v", got)
+	}
+}
+
+// First delete is silently lost; the read-back must re-issue it and converge.
+func TestSolver_CleanUp_ReadBackRecoversLostDelete(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}}
+	fc.loseWrites = 1 // drop the first delete
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); got != nil {
+		t.Fatalf("delete did not converge; values = %v", got)
+	}
+	if fc.deletes < 2 {
+		t.Errorf("expected at least 2 delete attempts (one lost), got %d", fc.deletes)
 	}
 }
 
@@ -359,6 +293,9 @@ type fakeRRSetClient struct {
 	// loseWrites silently drops this many upcoming Create/Replace/Delete calls
 	// (they return success but do not change state) to simulate a lost/lagging write.
 	loseWrites int
+	// deleteErr, when set, is returned by DeleteRRSet after the delete is applied,
+	// so tests can exercise how the caller treats a delete that reports not-found.
+	deleteErr error
 }
 
 func newFakeRRSetClient() *fakeRRSetClient {
@@ -414,7 +351,7 @@ func (f *fakeRRSetClient) DeleteRRSet(_ context.Context, _, _, name, _ string) e
 		return nil
 	}
 	delete(f.records, name)
-	return nil
+	return f.deleteErr
 }
 
 // values returns the stored TXT values for a record name (nil if absent).

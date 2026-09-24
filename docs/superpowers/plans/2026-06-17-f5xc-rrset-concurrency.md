@@ -663,7 +663,7 @@ git commit -m "feat: serialize and read-back-verify Present via reconcile loop"
 - Modify: `f5xc/solver.go` (rewrite `CleanUp`)
 - Modify: `f5xc/solver_test.go` (repoint CleanUp tests onto the fake; add read-back test)
 
-- [ ] **Step 1: Write the failing CleanUp tests (on the fake)**
+- [x] **Step 1: Write the failing CleanUp tests (on the fake)**
 
 In `f5xc/solver_test.go`, REPLACE `TestSolver_CleanUp_RemovesOnlyOwnValue`, `TestSolver_CleanUp_ThreeChallenges_RemovesOnlyVerified`, `TestSolver_CleanUp_DeletesWhenLast`, `TestSolver_CleanUp_AlreadyGone`, and `TestSolver_CleanUp_DeleteNotFound` with these fake-backed versions:
 
@@ -748,12 +748,12 @@ func TestSolver_CleanUp_ReadBackRecoversLostDelete(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the CleanUp tests to verify they fail**
+- [x] **Step 2: Run the CleanUp tests to verify they fail**
 
 Run: `go test ./f5xc/ -run 'TestSolver_CleanUp' -v`
 Expected: FAIL — `CleanUp` still uses the old direct flow; read-back recovery and exact counts fail.
 
-- [ ] **Step 3: Rewrite CleanUp**
+- [x] **Step 3: Rewrite CleanUp**
 
 In `f5xc/solver.go`, replace the whole existing `CleanUp` func with:
 
@@ -797,12 +797,12 @@ func (s *Solver) CleanUp(ch *acme.ChallengeRequest) error {
 }
 ```
 
-- [ ] **Step 4: Run the CleanUp tests to verify they pass**
+- [x] **Step 4: Run the CleanUp tests to verify they pass**
 
 Run: `go test ./f5xc/ -run 'TestSolver_CleanUp' -v`
 Expected: PASS (all five).
 
-- [ ] **Step 5: Remove the now-unused closure mock**
+- [x] **Step 5: Remove the now-unused closure mock**
 
 After Tasks 3–4, the original closure-based `mockClient` (struct + its `GetRRSet`/`CreateRRSet`/`ReplaceRRSet`/`DeleteRRSet` methods) and the `tokenSolver` helper are no longer referenced by any test. Go compiles fine with unused package-level decls, but golangci-lint's `unused` linter (U1000) fails CI on them. Delete from `f5xc/solver_test.go`:
 - the `mockClient` struct definition and its four methods
@@ -810,7 +810,7 @@ After Tasks 3–4, the original closure-based `mockClient` (struct + its `GetRRS
 
 Keep `challengeRequest`, `f5xcChallenge`, `fakeSecretReader`, and `generateTestP12Bytes` — they are still used.
 
-- [ ] **Step 6: Run the whole f5xc package and the unused linter**
+- [x] **Step 6: Run the whole f5xc package and the unused linter**
 
 Run:
 ```bash
@@ -819,7 +819,7 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
 ```
 Expected: tests PASS; golangci-lint reports `0 issues` (no `U1000` for `mockClient`/`tokenSolver`). If U1000 still fires, a leftover reference or decl remains — remove it.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add f5xc/solver.go f5xc/solver_test.go
