@@ -833,7 +833,7 @@ git commit -m "feat: serialize and read-back-verify CleanUp via reconcile loop"
 **Files:**
 - Modify: `f5xc/solver_test.go` (add concurrent Present test)
 
-- [ ] **Step 1: Write the concurrency test**
+- [x] **Step 1: Write the concurrency test**
 
 Append to `f5xc/solver_test.go`:
 
@@ -883,12 +883,12 @@ func TestSolver_Present_ConcurrentSameFQDN_NoLostUpdates(t *testing.T) {
 
 Note: `solver_test.go` must import `fmt` (add it if not already imported).
 
-- [ ] **Step 2: Run the test under the race detector to verify it passes**
+- [x] **Step 2: Run the test under the race detector to verify it passes**
 
 Run: `go test -race ./f5xc/ -run TestSolver_Present_ConcurrentSameFQDN_NoLostUpdates -v`
 Expected: PASS, no race warnings. (Sanity check that it is meaningful: temporarily commenting out `s.locks.Lock(key)`/`Unlock` in `reconcile` makes this fail with fewer than 25 values — do not commit that change.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add f5xc/solver_test.go

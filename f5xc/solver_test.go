@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -476,5 +477,47 @@ func TestFakeRRSetClient_Sanity(t *testing.T) {
 	_ = fc.DeleteRRSet(ctx, "z", "g", "n", "TXT")
 	if got := fc.values("n"); got != nil {
 		t.Fatalf("after delete, values = %v, want nil", got)
+	}
+}
+
+// With many concurrent Present calls for distinct keys on the SAME FQDN, all values
+// must survive. The per-FQDN lock serializes the read-modify-write; without it the
+// GET→REPLACE cycles interleave and lose updates. Run under -race.
+func TestSolver_Present_ConcurrentSameFQDN_NoLostUpdates(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	s := fakeSolver(fc)
+
+	const n = 25
+	var wg sync.WaitGroup
+	wg.Add(n)
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		key := fmt.Sprintf("key-%02d", i)
+		go func() {
+			defer wg.Done()
+			if err := s.Present(f5xcChallenge(key)); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent Present error: %v", err)
+	}
+
+	got := fc.values("_acme-challenge")
+	if len(got) != n {
+		t.Fatalf("got %d values, want %d (lost updates): %v", len(got), n, got)
+	}
+	seen := map[string]bool{}
+	for _, v := range got {
+		seen[v] = true
+	}
+	for i := 0; i < n; i++ {
+		if key := fmt.Sprintf("key-%02d", i); !seen[key] {
+			t.Errorf("missing value %q", key)
+		}
 	}
 }
