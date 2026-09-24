@@ -1,6 +1,6 @@
 module github.com/wenkow/cert-manager-webhook-f5xc
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/cert-manager/cert-manager v1.21.2
