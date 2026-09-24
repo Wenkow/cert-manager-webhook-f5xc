@@ -6,7 +6,7 @@
 
 **Architecture:** A refcounted per-FQDN keyed mutex (zero-value usable, lives on `Solver`) serializes the GET→modify→write cycle. A unified reconcile loop parameterized by `satisfied`/`mutate` drives both `Present` and `CleanUp`, re-reading after each write (the read-back) and re-applying idempotently up to a bound. The F5 XC client is unchanged.
 
-**Tech Stack:** Go, `sync` (mutex), `k8s.io/klog/v2`, cert-manager webhook solver interface. Tests: standard `testing`, `-race`. Lint: golangci-lint v2.12.2 (staticcheck + typecheck).
+**Tech Stack:** Go, `sync` (mutex), `k8s.io/klog/v2`, cert-manager webhook solver interface. Tests: standard `testing`, `-race`. Lint: golangci-lint v2.13.2 (staticcheck + typecheck) — must match the pin in `.github/workflows/ci.yaml`, and its build Go must be >= the `go` directive in `go.mod`.
 
 ---
 
@@ -38,7 +38,7 @@ Design spec: `docs/superpowers/specs/2026-06-17-f5xc-rrset-concurrency-design.md
 - Create: `f5xc/keyedmutex.go`
 - Test: `f5xc/keyedmutex_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `f5xc/keyedmutex_test.go`:
 
@@ -110,12 +110,12 @@ func TestKeyedMutex_NoLeak(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./f5xc/ -run TestKeyedMutex -v`
 Expected: FAIL — compile error `undefined: keyedMutex`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `f5xc/keyedmutex.go`:
 
@@ -187,12 +187,12 @@ func (k *keyedMutex) len() int {
 }
 ```
 
-- [ ] **Step 4: Run tests (with race detector) to verify they pass**
+- [x] **Step 4: Run tests (with race detector) to verify they pass**
 
 Run: `go test -race ./f5xc/ -run TestKeyedMutex -v`
 Expected: PASS (all three), no race warnings.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add f5xc/keyedmutex.go f5xc/keyedmutex_test.go
@@ -815,7 +815,7 @@ Keep `challengeRequest`, `f5xcChallenge`, `fakeSecretReader`, and `generateTestP
 Run:
 ```bash
 go test ./f5xc/ -v
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
 ```
 Expected: tests PASS; golangci-lint reports `0 issues` (no `U1000` for `mockClient`/`tokenSolver`). If U1000 still fires, a leftover reference or decl remains — remove it.
 
@@ -1013,8 +1013,8 @@ Run:
 go test ./... 
 go test -race ./f5xc/
 go vet ./...
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --build-tags integration ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run --build-tags integration ./...
 ```
 Expected: all pass, golangci-lint reports `0 issues` for BOTH build-tag variants (this catches the cross-build-tag typecheck class of failure that `go vet` misses).
 
