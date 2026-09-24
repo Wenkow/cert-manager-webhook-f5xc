@@ -160,19 +160,30 @@ exact lag the read-back exists to absorb becomes a hard challenge failure.
 ## Error handling & eventual consistency
 
 - **Bounds (package `var`, overridable in tests like the existing retry vars):**
-  `verifyAttempts = 5`, `verifyInterval = 1s` — a 5 s read-back budget.
+  `verifyAttempts = 3` writes, each followed by polling every `pollInterval = 250ms`
+  for up to `settleBudget = 4s`.
 
-  Retuned 2026-09-24. The original `3 × 500ms` gave 1.5 s, which is below the
-  measured median settle time of 1.32 s and well below the observed maximum of
-  3.22 s: the read-back would routinely expire before a change had propagated and
-  `Present` would fail a challenge that was in fact fine. 5 s clears the measured
-  maximum with margin.
+  Retuned twice on 2026-09-24. The original `3 × 500ms` gave a 1.5 s budget, below
+  the measured 1.32 s median settle time, so the read-back expired before a change
+  had propagated and `Present` failed challenges that were in fact fine.
+
+  Raising it to a fixed `5 × 1s` fixed the false failure but introduced a different
+  one: at a 1 s interval the read-back still usually ran before the write landed, so
+  the loop re-wrote on nearly every call. That is both an extra round trip and a
+  write arriving while the zone is mid-commit — the documented trigger for error 14,
+  which this design is otherwise careful to avoid.
+
+  Polling separates the two concerns: re-read often (cheap, no zone change), but only
+  re-write once the settle budget has genuinely elapsed (rare). The common case now
+  returns as soon as the write is visible — about 1.3 s — with exactly one write, and
+  `settleBudget` still clears the measured 3.22 s maximum. Measured effect on the live
+  five-way concurrent scenario: 33.0 s → 24.5 s.
 - **Writes:** transient code 14 already retried by the client's `doWithRetry`; unchanged.
 - **GET inside the loop:** not-found (HTTP 404 / API code 5) via `client.IsNotFound` →
   for CleanUp this is `satisfied` (done); for Present it means CREATE. Other errors
   (auth, non-14 5xx) → fail fast and return.
 - **Lag vs. genuine loss:** under the lock the only ways a read-back fails are propagation
-  delay or a real F5 XC drop. The reaction is identical — wait `verifyInterval` and re-apply
+  delay or a real F5 XC drop. The reaction is identical — keep polling, and re-apply once the settle budget elapses
   idempotently — so no distinction is needed. Lag resolves by waiting; a drop is repaired.
 - **Exhaustion:** after `verifyAttempts` still unsatisfied → return an error
   (`f5xc: value not converged ...`, logged at warning with details). cert-manager retries the

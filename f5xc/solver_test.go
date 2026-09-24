@@ -302,9 +302,8 @@ func TestSolver_Present_FinalAttemptWriteIsVerified(t *testing.T) {
 
 // A single attempt must still be able to succeed.
 func TestSolver_Present_SingleAttemptConverges(t *testing.T) {
-	oldA, oldI := verifyAttempts, verifyInterval
-	verifyAttempts, verifyInterval = 1, 0
-	t.Cleanup(func() { verifyAttempts, verifyInterval = oldA, oldI })
+	fastReconcile(t)
+	verifyAttempts = 1
 	fc := newFakeRRSetClient()
 	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("unexpected error with verifyAttempts=1: %v", err)
@@ -316,12 +315,17 @@ func TestSolver_Present_SingleAttemptConverges(t *testing.T) {
 func TestSolver_Present_DuplicateCreateTolerated(t *testing.T) {
 	fastReconcile(t)
 	fc := newFakeRRSetClient()
-	fc.lagGets = 2 // GET 1 genuinely absent, GET 2 stale after the create landed
+	// Enough stale reads that the loop gives up waiting and re-issues CREATE on a
+	// record that now exists — the case the live API rejects as a duplicate.
+	fc.lagGets = 3
 	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
 		t.Fatalf("duplicate CREATE after a stale read should be tolerated, got: %v", err)
 	}
 	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
 		t.Fatalf("values = %v, want [challenge-key]", got)
+	}
+	if fc.creates < 2 {
+		t.Fatalf("test did not exercise the duplicate CREATE path; creates = %d", fc.creates)
 	}
 }
 
@@ -519,10 +523,11 @@ func fakeSolver(fc *fakeRRSetClient) *Solver {
 // of a test. Tests using it must NOT call t.Parallel() (it mutates package vars).
 func fastReconcile(t *testing.T) {
 	t.Helper()
-	oldInterval, oldAttempts := verifyInterval, verifyAttempts
-	verifyInterval = 0
-	verifyAttempts = 3
-	t.Cleanup(func() { verifyInterval, verifyAttempts = oldInterval, oldAttempts })
+	oldPoll, oldBudget, oldAttempts := pollInterval, settleBudget, verifyAttempts
+	pollInterval, settleBudget, verifyAttempts = 0, 0, 3
+	t.Cleanup(func() {
+		pollInterval, settleBudget, verifyAttempts = oldPoll, oldBudget, oldAttempts
+	})
 }
 
 func TestFakeRRSetClient_Sanity(t *testing.T) {

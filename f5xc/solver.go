@@ -16,12 +16,21 @@ import (
 )
 
 // Reconcile/verification tuning. Vars (not consts) so tests can override them.
-// Sized from live measurement (2026-09-24): the observed zone settle time was a
-// median of 1.32s and a maximum of 3.22s, so a 5s read-back budget clears the
-// measured worst case with margin.
+//
+// Sized from live measurement (2026-09-24): zone settle time had a median of 1.32s
+// and a maximum of 3.22s. Waiting and re-writing on a fixed 1s interval therefore
+// re-wrote on almost every call, because the read-back ran before the previous write
+// could propagate — and a write arriving while a change is committing is exactly what
+// triggers API error 14. So polling and re-writing are separated: poll often, but only
+// re-write once the settle budget has genuinely elapsed.
 var (
-	verifyAttempts = 5
-	verifyInterval = time.Second
+	// verifyAttempts bounds how many times the desired state is written.
+	verifyAttempts = 3
+	// pollInterval is how often the read-back re-reads while a write propagates.
+	pollInterval = 250 * time.Millisecond
+	// settleBudget is how long to keep polling after a write before re-applying it.
+	// It clears the measured 3.22s maximum with margin.
+	settleBudget = 4 * time.Second
 )
 
 // RRSetClient defines the DNS record operations required by the solver.
@@ -273,19 +282,41 @@ func (s *Solver) reconcile(
 			return err
 		}
 
-		time.Sleep(verifyInterval)
-	}
-
-	// Read back the write issued on the final attempt. Without this the loop makes
-	// verifyAttempts writes but only verifyAttempts-1 read-backs, so a write that
-	// landed on the last attempt would still be reported as a failure.
-	if _, ok, err := check(); err == nil && ok {
-		return nil
+		// Poll for this write to land rather than re-writing on a fixed interval.
+		// Every write here is read back, including the one from the final attempt.
+		settled, err := waitForSettle(check)
+		if err != nil {
+			return err
+		}
+		if settled {
+			return nil
+		}
+		klog.V(2).InfoS("f5xc: write did not settle within budget, re-applying",
+			"subdomain", subdomain, "attempt", attempt)
 	}
 
 	klog.ErrorS(nil, "f5xc: RRSet did not converge",
 		"zone", zone, "group", cfg.GroupName, "subdomain", subdomain, "attempts", verifyAttempts)
 	return fmt.Errorf("f5xc: RRSet %q did not converge after %d attempts", subdomain, verifyAttempts)
+}
+
+// waitForSettle re-reads until the desired state holds or settleBudget elapses. It
+// reports whether the state settled. Polling instead of sleeping the whole budget
+// means the common case returns as soon as the write is visible, and no redundant
+// write is issued while the zone is still committing the previous one.
+func waitForSettle(check func() (*client.APIRRSet, bool, error)) (bool, error) {
+	deadline := time.Now().Add(settleBudget)
+	for {
+		time.Sleep(pollInterval)
+		if _, ok, err := check(); err != nil {
+			return false, err
+		} else if ok {
+			return true, nil
+		}
+		if !time.Now().Before(deadline) {
+			return false, nil
+		}
+	}
 }
 
 // applyRRSetOp performs one create/replace/delete. Errors meaning "the state is
