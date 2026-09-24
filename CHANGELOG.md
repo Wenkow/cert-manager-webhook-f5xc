@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-24
 
 ### Fixed
 
@@ -23,13 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports no security reason to move.
 - Bump `software.sslmate.com/src/go-pkcs12` to v0.7.3. This one is on the P12
   certificate authentication path (`NewCertAuth` → `pkcs12.DecodeChain`).
+- Build with Go 1.27.1.
+- The chart Deployment now uses the `Recreate` strategy. The default RollingUpdate
+  briefly ran a second pod, which the Service also selected; the solver's lock is
+  in-process, so two pods could write the same RRSet. Upgrades now have a short gap
+  instead, which cert-manager retries through.
 
 ### Security
 
-- `govulncheck` (v1.8.0, DB 2026-09-16) reports **0 vulnerabilities reachable from
-  this code**, before and after the bumps. One module-level advisory remains:
-  GO-2026-5932, the unmaintained `golang.org/x/crypto/openpgp`. It has no fix and
-  `openpgp` is not compiled into this binary.
+- `govulncheck` (re-run 2026-09-24 against both the Go 1.27.1 toolchain and the
+  1.27.0 one the previous image used) reports **0 vulnerabilities reachable from this
+  code**. One module-level advisory remains: GO-2026-5932, the unmaintained
+  `golang.org/x/crypto/openpgp`. It has no fix and `openpgp` is not compiled into
+  this binary.
 
 ## [0.5.3] - 2026-09-09
 
@@ -210,6 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.6.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.0...v0.5.1

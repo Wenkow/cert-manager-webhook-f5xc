@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.5.3
-appVersion: "0.5.3"
+version: 0.6.0
+appVersion: "0.6.0"
 type: application
 keywords:
   - cert-manager
@@ -21,17 +21,19 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.5.3
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.6.0
       platforms:
         - linux/amd64
         - linux/arm64
         - linux/arm/v7
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
-    - kind: security
-      description: "Upgrade google.golang.org/grpc to v1.83.2 and golang.org/x/net to v0.58.0"
+    - kind: fixed
+      description: "Concurrent challenges for the same FQDN no longer lose TXT values"
     - kind: changed
-      description: "Build with Go 1.27.0"
+      description: "The Deployment now uses the Recreate strategy, so an upgrade never runs two pods at once"
+    - kind: changed
+      description: "Build with Go 1.27.1; cert-manager v1.21.2 and k8s.io/* v0.36.5"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io
