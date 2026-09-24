@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Bump `github.com/cert-manager/cert-manager` to v1.21.2 and `k8s.io/*` to v0.36.5
+  (was v1.21.1 / v0.36.3). Both stay within the minor that cert-manager v1.21 builds
+  against (`k8s.io` v0.36.x), so the supported Kubernetes range is unchanged at
+  1.33–1.36. `k8s.io` v0.37 is available but is deliberately not taken: it would put
+  this webhook a full minor ahead of cert-manager's own dependency, and govulncheck
+  reports no security reason to move.
+- Bump `software.sslmate.com/src/go-pkcs12` to v0.7.3. This one is on the P12
+  certificate authentication path (`NewCertAuth` → `pkcs12.DecodeChain`).
+
+### Security
+
+- `govulncheck` (v1.8.0, DB 2026-09-16) reports **0 vulnerabilities reachable from
+  this code**, before and after the bumps. One module-level advisory remains:
+  GO-2026-5932, the unmaintained `golang.org/x/crypto/openpgp`. It has no fix and
+  `openpgp` is not compiled into this binary.
+
 ## [0.5.3] - 2026-09-09
 
 ### Security
