@@ -208,7 +208,7 @@ This introduces the test backbone the reconcile tests need. The existing closure
 **Files:**
 - Modify: `f5xc/solver_test.go` (add fake + helpers + a sanity test)
 
-- [ ] **Step 1: Add the stateful fake and helpers, plus a sanity test**
+- [x] **Step 1: Add the stateful fake and helpers, plus a sanity test**
 
 Append to `f5xc/solver_test.go` (keep existing `mockClient`, `challengeRequest`, `fakeSecretReader`, etc.):
 
@@ -337,29 +337,29 @@ func TestFakeRRSetClient_Sanity(t *testing.T) {
 
 Note: `solver_test.go` must import `sync`. Add it to the import block.
 
-- [ ] **Step 2: Run the sanity test to verify it fails**
+- [x] **Step 2: Run the sanity test to verify it fails**
 
 Run: `go test ./f5xc/ -run TestFakeRRSetClient_Sanity -v`
 Expected: FAIL — compile error `undefined: verifyInterval` / `undefined: verifyAttempts` (referenced by `fastReconcile`).
 
-- [ ] **Step 3: Add the package vars so the test file compiles**
+- [x] **Step 3: Add the package vars so the test file compiles**
 
 In `f5xc/solver.go`, add `"time"` to the import block, and add these package-level vars after the imports (above `type RRSetClient`):
 
 ```go
 // Reconcile/verification tuning. Vars (not consts) so tests can override them.
 var (
-	verifyAttempts = 3
-	verifyInterval = 500 * time.Millisecond
+	verifyAttempts = 5
+	verifyInterval = time.Second
 )
 ```
 
-- [ ] **Step 4: Run the sanity test to verify it passes**
+- [x] **Step 4: Run the sanity test to verify it passes**
 
 Run: `go test ./f5xc/ -run TestFakeRRSetClient_Sanity -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add f5xc/solver_test.go f5xc/solver.go

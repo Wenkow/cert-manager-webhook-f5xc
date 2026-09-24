@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -374,5 +375,126 @@ func TestSolver_Present_CertAuth(t *testing.T) {
 	}
 	if createdRRSet.TXTRecord == nil {
 		t.Fatal("expected TXT record to be created")
+	}
+}
+
+// fakeRRSetClient is an in-memory RRSetClient whose GET reflects prior writes,
+// so it can model F5 XC's read-modify-write semantics for the reconcile loop.
+// It is safe for concurrent use. Records are keyed by record name (tests use a
+// single zone/group, all TXT).
+type fakeRRSetClient struct {
+	mu       sync.Mutex
+	records  map[string]client.RRSet // name -> rrset
+	creates  int
+	replaces int
+	deletes  int
+	gets     int
+	// loseWrites silently drops this many upcoming Create/Replace/Delete calls
+	// (they return success but do not change state) to simulate a lost/lagging write.
+	loseWrites int
+}
+
+func newFakeRRSetClient() *fakeRRSetClient {
+	return &fakeRRSetClient{records: map[string]client.RRSet{}}
+}
+
+func (f *fakeRRSetClient) GetRRSet(_ context.Context, _, _, name, _ string) (*client.APIRRSet, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gets++
+	rr, ok := f.records[name]
+	if !ok {
+		return nil, nil // not found, mirrors client.GetRRSet
+	}
+	// return a deep copy so callers cannot mutate our state
+	vals := append([]string{}, rr.TXTRecord.Values...)
+	return &client.APIRRSet{RRSet: client.RRSet{
+		TTL:       rr.TTL,
+		TXTRecord: &client.TXTRecord{Name: rr.TXTRecord.Name, Values: vals},
+	}}, nil
+}
+
+func (f *fakeRRSetClient) CreateRRSet(_ context.Context, _, _ string, rrset client.RRSet) (*client.APIRRSet, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.creates++
+	if f.loseWrites > 0 {
+		f.loseWrites--
+		return &client.APIRRSet{}, nil
+	}
+	f.records[rrset.TXTRecord.Name] = rrset
+	return &client.APIRRSet{}, nil
+}
+
+func (f *fakeRRSetClient) ReplaceRRSet(_ context.Context, _, _, name, _ string, rrset client.RRSet) (*client.APIRRSet, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.replaces++
+	if f.loseWrites > 0 {
+		f.loseWrites--
+		return &client.APIRRSet{}, nil
+	}
+	f.records[name] = rrset
+	return &client.APIRRSet{}, nil
+}
+
+func (f *fakeRRSetClient) DeleteRRSet(_ context.Context, _, _, name, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes++
+	if f.loseWrites > 0 {
+		f.loseWrites--
+		return nil
+	}
+	delete(f.records, name)
+	return nil
+}
+
+// values returns the stored TXT values for a record name (nil if absent).
+func (f *fakeRRSetClient) values(name string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rr, ok := f.records[name]
+	if !ok {
+		return nil
+	}
+	return append([]string{}, rr.TXTRecord.Values...)
+}
+
+// fakeSolver builds a Solver backed by the given fake client and a token-auth secret.
+func fakeSolver(fc *fakeRRSetClient) *Solver {
+	return &Solver{
+		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return fc, nil },
+		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
+	}
+}
+
+// fastReconcile makes the reconcile loop run without real backoff for the duration
+// of a test. Tests using it must NOT call t.Parallel() (it mutates package vars).
+func fastReconcile(t *testing.T) {
+	t.Helper()
+	oldInterval, oldAttempts := verifyInterval, verifyAttempts
+	verifyInterval = 0
+	verifyAttempts = 3
+	t.Cleanup(func() { verifyInterval, verifyAttempts = oldInterval, oldAttempts })
+}
+
+func TestFakeRRSetClient_Sanity(t *testing.T) {
+	fc := newFakeRRSetClient()
+	ctx := context.Background()
+	if rr, _ := fc.GetRRSet(ctx, "z", "g", "n", "TXT"); rr != nil {
+		t.Fatal("expected nil for absent record")
+	}
+	_, _ = fc.CreateRRSet(ctx, "z", "g", client.RRSet{TXTRecord: &client.TXTRecord{Name: "n", Values: []string{"a"}}})
+	if got := fc.values("n"); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("after create, values = %v, want [a]", got)
+	}
+	_, _ = fc.ReplaceRRSet(ctx, "z", "g", "n", "TXT", client.RRSet{TXTRecord: &client.TXTRecord{Name: "n", Values: []string{"a", "b"}}})
+	if got := fc.values("n"); len(got) != 2 {
+		t.Fatalf("after replace, values = %v, want 2", got)
+	}
+	_ = fc.DeleteRRSet(ctx, "z", "g", "n", "TXT")
+	if got := fc.values("n"); got != nil {
+		t.Fatalf("after delete, values = %v, want nil", got)
 	}
 }

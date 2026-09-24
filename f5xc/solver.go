@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	acme "github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +13,15 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/wenkow/cert-manager-webhook-f5xc/f5xc/client"
+)
+
+// Reconcile/verification tuning. Vars (not consts) so tests can override them.
+// Sized from live measurement (2026-09-24): the observed zone settle time was a
+// median of 1.32s and a maximum of 3.22s, so a 5s read-back budget clears the
+// measured worst case with margin.
+var (
+	verifyAttempts = 5
+	verifyInterval = time.Second
 )
 
 // RRSetClient defines the DNS record operations required by the solver.
