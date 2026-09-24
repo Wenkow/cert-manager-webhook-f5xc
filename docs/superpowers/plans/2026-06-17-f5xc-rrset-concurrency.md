@@ -902,7 +902,7 @@ git commit -m "test: prove per-FQDN lock prevents concurrent lost updates"
 **Files:**
 - Modify: `f5xc/integration_p12_test.go` (build tag `integration`, gitignored)
 
-- [ ] **Step 1: Add the concurrent live scenario**
+- [x] **Step 1: Add the concurrent live scenario**
 
 Append to `f5xc/integration_p12_test.go`:
 
@@ -980,12 +980,12 @@ Also extend the reset label list in `TestIntegration_P12_Reset` to include `"con
 
 Note: `integration_p12_test.go` already imports `fmt` and `sync` is needed — add `"sync"` to its import block.
 
-- [ ] **Step 2: Compile-check under the integration build tag**
+- [x] **Step 2: Compile-check under the integration build tag**
 
 Run: `go vet -tags integration ./f5xc/`
 Expected: no output (compiles).
 
-- [ ] **Step 3: Run the live scenario (requires credentials)**
+- [x] **Step 3: Run the live scenario (requires credentials)**
 
 Run:
 ```bash
@@ -995,7 +995,7 @@ go test -tags integration -v -timeout 300s ./f5xc/ -run TestIntegration_P12_Conc
 ```
 Expected: PASS — all 5 values present after concurrent Present, clean convergence after cleanups. (If skipped due to missing `F5XC_IT_*`, set them per `docs`/memory and re-run.)
 
-- [ ] **Step 4: No commit**
+- [x] **Step 4: No commit**
 
 This file is gitignored. Nothing to commit; the change stays local.
 
@@ -1006,7 +1006,7 @@ This file is gitignored. Nothing to commit; the change stays local.
 **Files:**
 - Modify: `CHANGELOG.md` (Unreleased entry)
 
-- [ ] **Step 1: Run the full local verification suite**
+- [x] **Step 1: Run the full local verification suite**
 
 Run:
 ```bash
@@ -1018,7 +1018,7 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run --buil
 ```
 Expected: all pass, golangci-lint reports `0 issues` for BOTH build-tag variants (this catches the cross-build-tag typecheck class of failure that `go vet` misses).
 
-- [ ] **Step 2: Add a CHANGELOG entry under Unreleased**
+- [x] **Step 2: Add a CHANGELOG entry under Unreleased**
 
 In `CHANGELOG.md`, add directly under the top header block (above the latest released version):
 
@@ -1030,7 +1030,7 @@ In `CHANGELOG.md`, add directly under the top header block (above the latest rel
 - Concurrent challenges for the same FQDN (apex + wildcard SANs, or many certificates issued at once) no longer lose TXT values. `Present`/`CleanUp` now serialize the read-modify-write of each shared RRSet with a per-FQDN lock and verify the result with a post-write read-back, re-applying idempotently if a write did not land.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CHANGELOG.md

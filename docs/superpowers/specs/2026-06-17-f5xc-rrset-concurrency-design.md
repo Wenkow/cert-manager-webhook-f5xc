@@ -39,6 +39,7 @@ It ran with the client's own code-14 retry disabled, so it observed raw 503s.
 | Zone settle time T | median **1.32 s**, min 1.29 s, **max 3.22 s** |
 | 10 concurrent writes, distinct RRSets, one zone | **10 of 10 succeeded**, slowest 590 ms, zero code 14 |
 | Two concurrent `Present` on one shared RRSet | **Value lost on the first attempt** |
+| Five concurrent `Present` on one shared RRSet, no lock (2026-09-24, token auth) | **HTTP 400** `duplicate RR type: 'TXT'` |
 
 Three of these corrected working assumptions, and they are the reason this
 revision exists:
@@ -55,6 +56,14 @@ revision exists:
    throughput problem that measurement showed does not exist; it would only
    serialise work the API already accepts in parallel. The per-FQDN granularity
    below is correct.
+
+A later run of the five-way scenario against the live API (with the lock removed,
+to confirm the test is not vacuous) showed a second failure mode: when several
+goroutines see the RRSet as absent at the same moment, they all issue CREATE and
+the API rejects the losers with HTTP 400, `Record '...' contains duplicate RR type:
+'TXT'`. So an un-serialized read-modify-write does not only lose values silently —
+on a record that does not exist yet it fails the challenge outright. The per-FQDN
+lock fixes both, since only one goroutine ever decides create-vs-replace.
 
 The remaining, measured failure is the lost update — which is what actually
 prevents a multi-SAN certificate (apex + wildcard) from validating.

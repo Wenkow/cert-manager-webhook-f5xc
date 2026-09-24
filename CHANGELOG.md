@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Concurrent challenges for the same FQDN no longer lose TXT values. `Present` and
+  `CleanUp` serialize each shared RRSet behind a per-FQDN lock and confirm the write
+  with a read-back, re-applying idempotently if it did not land.
+
 ### Changed
 
 - Bump `github.com/cert-manager/cert-manager` to v1.21.2 and `k8s.io/*` to v0.36.5
