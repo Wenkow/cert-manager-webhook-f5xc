@@ -342,6 +342,29 @@ func TestSolver_CleanUp_ReplaceNotFoundTolerated(t *testing.T) {
 	}
 }
 
+// A stale read can miss a value a concurrent challenge already wrote. Deleting the
+// whole RRSet on that basis destroys the other challenge, and the read-back cannot
+// detect it, so the delete decision must be confirmed by a second read.
+func TestSolver_CleanUp_StaleReadDoesNotDeleteOthersValue(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{
+		Name: "_acme-challenge", Values: []string{"other-key", "challenge-key"}}}
+	// The first read misses the other challenge's value; the confirming read sees it.
+	fc.hideValue, fc.hideGets = "other-key", 1
+
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := fc.values("_acme-challenge")
+	if len(got) != 1 || got[0] != "other-key" {
+		t.Fatalf("other challenge's value was destroyed; values = %v, want [other-key]", got)
+	}
+	if fc.deletes != 0 {
+		t.Errorf("deletes = %d, want 0 (another value was present)", fc.deletes)
+	}
+}
+
 func generateTestP12Bytes(t *testing.T) []byte {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -420,6 +443,10 @@ type fakeRRSetClient struct {
 	// lagGets makes the next N GetRRSet calls report the record as absent even
 	// after it was written, modelling read-after-write propagation lag.
 	lagGets int
+	// hideValue is omitted from the next hideGets GetRRSet results, modelling a
+	// stale read that misses a value another challenge has already written.
+	hideValue string
+	hideGets  int
 	// createErr/replaceErr, when set, fail every corresponding write.
 	createErr  error
 	replaceErr error
@@ -447,6 +474,16 @@ func (f *fakeRRSetClient) GetRRSet(_ context.Context, _, _, name, _ string) (*cl
 	}
 	// return a deep copy so callers cannot mutate our state
 	vals := append([]string{}, rr.TXTRecord.Values...)
+	if f.hideGets > 0 && f.hideValue != "" {
+		f.hideGets--
+		kept := vals[:0:0]
+		for _, v := range vals {
+			if v != f.hideValue {
+				kept = append(kept, v)
+			}
+		}
+		vals = kept
+	}
 	return &client.APIRRSet{RRSet: client.RRSet{
 		TTL:       rr.TTL,
 		TXTRecord: &client.TXTRecord{Name: rr.TXTRecord.Name, Values: vals},

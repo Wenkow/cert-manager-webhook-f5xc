@@ -278,6 +278,28 @@ func (s *Solver) reconcile(
 		}
 
 		op, rrset := mutate(existing)
+
+		// A DELETE also removes values this caller does not own, and CleanUp's
+		// read-back cannot tell that apart from success: an absent record satisfies
+		// "my value is gone" either way, so over-deletion reports as a clean run.
+		// The API offers no compare-and-swap, so the best available guard is to
+		// re-read and re-decide before committing to something irreversible.
+		if op == opDelete {
+			time.Sleep(pollInterval)
+			confirmed, done, err := check()
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+			if op2, rrset2 := mutate(confirmed); op2 != opDelete {
+				klog.V(2).InfoS("f5xc: second read found other values, replacing instead of deleting",
+					"subdomain", subdomain)
+				op, rrset = op2, rrset2
+			}
+		}
+
 		if err := applyRRSetOp(ctx, cl, cfg, zone, subdomain, op, rrset); err != nil {
 			return err
 		}
