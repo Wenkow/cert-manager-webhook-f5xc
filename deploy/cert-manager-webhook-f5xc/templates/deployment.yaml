@@ -9,7 +9,13 @@ metadata:
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
 spec:
+  # Single replica by design: the solver serializes concurrent challenges for the
+  # same FQDN with an in-process lock, which only holds within one pod.
   replicas: 1
+  # Recreate, not the default RollingUpdate: maxSurge would run a second pod during
+  # an upgrade, and the Service selects both, so two pods would write the same RRSet.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ include "cert-manager-webhook-f5xc.name" . }}

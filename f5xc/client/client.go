@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -27,6 +28,21 @@ const retryableCode = 14
 // It is returned (sometimes with a non-404 HTTP status) when an RRSet has already
 // been deleted, which must be treated as success for idempotent cleanup.
 const notFoundCode = 5
+
+// IsDuplicateRecord reports whether err is F5 XC rejecting a CREATE because the
+// RRSet already exists. A lagging read can make an existing record look absent, so
+// callers that re-issue CREATE need to tell this apart from a real failure.
+//
+// It matches on the response text rather than a code: the API returns HTTP 400 with
+// a generic code 3 ("Service configuration is not valid") and puts the real reason
+// in a nested details array, which does not fit APIError.Details ([]string), so the
+// body arrives as an unparsed error string.
+func IsDuplicateRecord(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "duplicate RR type")
+}
 
 // IsNotFound reports whether err represents a "record not found" response from the
 // F5 XC API, either via HTTP 404 or API error code 5 (NOT_FOUND). Callers use this

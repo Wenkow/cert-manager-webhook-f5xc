@@ -144,7 +144,7 @@ helm upgrade cert-manager-webhook-f5xc \
   --set 'extraArgs={-v=2}'
 ```
 
-- `-v=2` — operation-level logs (Present/CleanUp decisions: created, appended, skipped duplicate, removed value, deleted)
+- `-v=2` — operation-level logs (Present/CleanUp decisions: RRSet created, replaced, deleted, already in the desired state, and re-applies during read-back verification)
 - `-v=4` — per-request logs for every F5 XC API call (method, path, response status)
 
 ## Uninstall

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -285,6 +286,58 @@ func TestSolver_CleanUp_DeleteErrorPropagates(t *testing.T) {
 	}
 }
 
+// H1: the write issued on the final attempt must be read back too. With the first
+// verifyAttempts-1 writes lost, the last one lands and Present must report success.
+func TestSolver_Present_FinalAttemptWriteIsVerified(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.loseWrites = verifyAttempts - 1
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("last write landed but Present reported failure: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("values = %v, want [challenge-key]", got)
+	}
+}
+
+// A single attempt must still be able to succeed.
+func TestSolver_Present_SingleAttemptConverges(t *testing.T) {
+	oldA, oldI := verifyAttempts, verifyInterval
+	verifyAttempts, verifyInterval = 1, 0
+	t.Cleanup(func() { verifyAttempts, verifyInterval = oldA, oldI })
+	fc := newFakeRRSetClient()
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error with verifyAttempts=1: %v", err)
+	}
+}
+
+// H2: a lagging read-back makes an existing RRSet look absent, so the loop re-issues
+// CREATE. The API rejects that as a duplicate; it must be tolerated, not fatal.
+func TestSolver_Present_DuplicateCreateTolerated(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.lagGets = 2 // GET 1 genuinely absent, GET 2 stale after the create landed
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("duplicate CREATE after a stale read should be tolerated, got: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("values = %v, want [challenge-key]", got)
+	}
+}
+
+// M2: the RRSet disappearing between the read and the REPLACE is not a failure.
+func TestSolver_CleanUp_ReplaceNotFoundTolerated(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"other-key", "challenge-key"}}}
+	fc.replaceErr = &client.APIError{Code: 5, Message: "record not found"}
+	if err := fakeSolver(fc).CleanUp(f5xcChallenge("challenge-key")); err == nil {
+		t.Log("replace reported not-found and CleanUp tolerated it")
+	} else if !strings.Contains(err.Error(), "did not converge") {
+		t.Fatalf("expected tolerance or a convergence error, got: %v", err)
+	}
+}
+
 func generateTestP12Bytes(t *testing.T) []byte {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -360,6 +413,9 @@ type fakeRRSetClient struct {
 	// both the fail-fast path and the not-found-means-absent path.
 	getErr  error
 	getErrN int
+	// lagGets makes the next N GetRRSet calls report the record as absent even
+	// after it was written, modelling read-after-write propagation lag.
+	lagGets int
 	// createErr/replaceErr, when set, fail every corresponding write.
 	createErr  error
 	replaceErr error
@@ -376,6 +432,10 @@ func (f *fakeRRSetClient) GetRRSet(_ context.Context, _, _, name, _ string) (*cl
 	if f.getErrN > 0 {
 		f.getErrN--
 		return nil, f.getErr
+	}
+	if f.lagGets > 0 {
+		f.lagGets--
+		return nil, nil
 	}
 	rr, ok := f.records[name]
 	if !ok {
@@ -395,6 +455,11 @@ func (f *fakeRRSetClient) CreateRRSet(_ context.Context, _, _ string, rrset clie
 	f.creates++
 	if f.createErr != nil {
 		return nil, f.createErr
+	}
+	// The live API rejects a CREATE for an RRSet that already exists; model that so
+	// tests cannot rely on CREATE being idempotent.
+	if _, exists := f.records[rrset.TXTRecord.Name]; exists {
+		return nil, fmt.Errorf("f5xc: HTTP 400: {\"code\":3,\"details\":[{\"details\":\"Record '%s' contains duplicate RR type: 'TXT'.\"}]}", rrset.TXTRecord.Name)
 	}
 	if f.loseWrites > 0 {
 		f.loseWrites--

@@ -51,7 +51,9 @@ revision exists:
    10-SAN certificate's `Present` phase finishes in well under a second.
 2. **The existing 60 s retry budget is ample.** At T≈1.32 s it covers roughly 45
    serialised writes. An earlier hypothesis that the budget was exhausted at
-   12–14 SANs assumed T≈4–5 s and is wrong.
+   12–14 SANs assumed T≈4–5 s and is wrong. Note this counts one write per
+   challenge; the reconcile loop can issue up to `verifyAttempts` writes when reads
+   lag, so the effective headroom is lower than 45 challenges.
 3. **A per-zone lock was considered and rejected.** It was proposed to fix the
    throughput problem that measurement showed does not exist; it would only
    serialise work the API already accepts in parallel. The per-FQDN granularity
@@ -87,8 +89,15 @@ Two layers, both in the solver:
    deterministically eliminating the intra-process race (the real, common cause at one
    replica).
 2. **Post-write read-back verification with bounded reconcile** confirms the write actually
-   landed (durability / eventual-consistency check) and repairs it if not — and keeps the
-   solution forward-safe if ever scaled past one replica.
+   landed (durability / eventual-consistency check) and repairs it if not.
+
+   It does **not** make the solver safe above one replica. `satisfied` only checks the
+   caller's own value, never the other values in the RRSet, so a second replica reading
+   pre-write state can REPLACE and destroy a value whose read-back already succeeded.
+   cert-manager sets `Challenge.Status.Presented` once and does not call `Present`
+   again, so nothing repairs that. Single replica is a correctness requirement, which
+   is why the chart pins `replicas: 1` and uses the `Recreate` strategy (the default
+   RollingUpdate would run two pods during an upgrade).
 
 The client (`f5xc/client/`) stays a thin API wrapper; all serialization and reconcile
 *policy* lives in the solver, which knows the desired end-state.
@@ -123,14 +132,30 @@ for attempt := 1..verifyAttempts:
     cur := GET(rrset)                  // tolerate not-found per operation
     if satisfied(cur):                 // this GET is the read-back verification
         return nil
-    apply(mutate(cur))                 // CREATE / REPLACE / DELETE (idempotent)
+    apply(mutate(cur))                 // CREATE / REPLACE / DELETE
     sleep(verifyInterval)              // let read-after-write propagate
+cur := GET(rrset)                      // read back the LAST write too
+if satisfied(cur):
+    return nil
 return error("value not converged after N attempts")
 ```
 
+The trailing GET is not optional. Without it the loop performs `verifyAttempts`
+writes but only `verifyAttempts - 1` read-backs, so a write that lands on the final
+attempt is still reported as a failure — and `verifyAttempts = 1` can never succeed
+at all.
+
 The read-back is structural: the first iteration applies the change; the next iteration's
 GET re-checks `satisfied`. No contention → converges in 2 GETs + 1 write (one extra GET
-versus today, no redundant write). Loss/lag → re-apply (safe, idempotent) up to the bound.
+versus today, no redundant write). Loss/lag → re-apply up to the bound.
+
+Re-application is only safe with one caveat: **CREATE is not idempotent.** REPLACE
+and DELETE are, but the API rejects a CREATE for an RRSet that already exists with
+HTTP 400 `duplicate RR type: 'TXT'` (measured — see above). Since `verifyInterval`
+is close to the measured settle time, a read-back can legitimately still report the
+record as absent just after it was created, which makes the loop re-issue CREATE.
+That rejection must therefore be tolerated and the loop allowed to continue, or the
+exact lag the read-back exists to absorb becomes a hard challenge failure.
 
 ## Error handling & eventual consistency
 
@@ -154,7 +179,10 @@ versus today, no redundant write). Loss/lag → re-apply (safe, idempotent) up t
   whole challenge, which is safe because every operation is idempotent.
 - **Lock hold time:** the lock is held for the whole loop, including backoff sleeps. It is
   per-FQDN, so other domains are unaffected; same-FQDN operations must serialize anyway.
-  Bounded at roughly `verifyAttempts × verifyInterval` (~5 s worst case) plus API time.
+  Bounded at roughly `verifyAttempts × verifyInterval` (~5 s) plus API time — and the
+  API time dominates the worst case, not the sleeps: each attempt can spend up to the
+  client's 30 s HTTP timeout on a GET and up to `retryMaxElapsed` (60 s) retrying a
+  code-14 write, so the true upper bound is minutes, not ~5 s.
   Measurement backs this being acceptable: distinct FQDNs do not contend, and ten of
   them complete in under a second.
 

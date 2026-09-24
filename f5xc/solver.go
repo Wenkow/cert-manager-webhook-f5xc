@@ -228,9 +228,10 @@ func containsValue(values []string, want string) bool {
 
 // reconcile serializes the read-modify-write for one RRSet (per FQDN) and verifies
 // the result by reading back. Each iteration: GET, return if satisfied (this is the
-// read-back), otherwise apply mutate. Re-application is safe because every operation
-// is idempotent. Bounded by verifyAttempts; on exhaustion it returns an error so
-// cert-manager retries the challenge.
+// read-back), otherwise apply mutate. Re-application is safe because REPLACE and
+// DELETE are idempotent and a duplicate CREATE is tolerated. Bounded by
+// verifyAttempts; on exhaustion it returns an error so cert-manager retries the
+// challenge.
 func (s *Solver) reconcile(
 	ctx context.Context,
 	cl RRSetClient,
@@ -243,41 +244,92 @@ func (s *Solver) reconcile(
 	s.locks.Lock(key)
 	defer s.locks.Unlock(key)
 
-	for attempt := 1; attempt <= verifyAttempts; attempt++ {
+	// check reads the RRSet and reports whether the desired state already holds.
+	// A not-found error means the record is absent, which is a legitimate state
+	// rather than a failure.
+	check := func() (*client.APIRRSet, bool, error) {
 		existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
 		if err != nil {
 			if !client.IsNotFound(err) {
-				return fmt.Errorf("f5xc: getting RRSet: %w", err)
+				return nil, false, fmt.Errorf("f5xc: getting RRSet: %w", err)
 			}
 			existing = nil
 		}
+		return existing, satisfied(txtValues(existing)), nil
+	}
 
-		if satisfied(txtValues(existing)) {
+	for attempt := 1; attempt <= verifyAttempts; attempt++ {
+		existing, ok, err := check()
+		if err != nil {
+			return err
+		}
+		if ok {
+			klog.V(2).InfoS("f5xc: RRSet already in desired state", "subdomain", subdomain, "attempt", attempt)
 			return nil
 		}
 
 		op, rrset := mutate(existing)
-		switch op {
-		case opCreate:
-			if _, err := cl.CreateRRSet(ctx, zone, cfg.GroupName, rrset); err != nil {
-				return fmt.Errorf("f5xc: creating RRSet: %w", err)
-			}
-		case opReplace:
-			if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
-				return fmt.Errorf("f5xc: replacing RRSet: %w", err)
-			}
-		case opDelete:
-			if err := cl.DeleteRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT"); err != nil && !client.IsNotFound(err) {
-				return fmt.Errorf("f5xc: deleting RRSet: %w", err)
-			}
+		if err := applyRRSetOp(ctx, cl, cfg, zone, subdomain, op, rrset); err != nil {
+			return err
 		}
 
-		if attempt < verifyAttempts {
-			time.Sleep(verifyInterval)
-		}
+		time.Sleep(verifyInterval)
 	}
 
+	// Read back the write issued on the final attempt. Without this the loop makes
+	// verifyAttempts writes but only verifyAttempts-1 read-backs, so a write that
+	// landed on the last attempt would still be reported as a failure.
+	if _, ok, err := check(); err == nil && ok {
+		return nil
+	}
+
+	klog.ErrorS(nil, "f5xc: RRSet did not converge",
+		"zone", zone, "group", cfg.GroupName, "subdomain", subdomain, "attempts", verifyAttempts)
 	return fmt.Errorf("f5xc: RRSet %q did not converge after %d attempts", subdomain, verifyAttempts)
+}
+
+// applyRRSetOp performs one create/replace/delete. Errors meaning "the state is
+// already what this op was moving toward" are tolerated so the loop can re-read and
+// settle instead of failing the challenge.
+func applyRRSetOp(
+	ctx context.Context,
+	cl RRSetClient,
+	cfg *F5XCConfig,
+	zone, subdomain string,
+	op rrsetOp,
+	rrset client.RRSet,
+) error {
+	switch op {
+	case opCreate:
+		if _, err := cl.CreateRRSet(ctx, zone, cfg.GroupName, rrset); err != nil {
+			// A lagging read can make an existing RRSet look absent. The API rejects
+			// the duplicate CREATE; the next read-back sees the record and switches
+			// to REPLACE, so this is not fatal.
+			if client.IsDuplicateRecord(err) {
+				klog.V(2).InfoS("f5xc: RRSet already exists, reconciling on next read-back", "subdomain", subdomain)
+				return nil
+			}
+			return fmt.Errorf("f5xc: creating RRSet: %w", err)
+		}
+		klog.V(2).InfoS("f5xc: created RRSet", "subdomain", subdomain, "values", len(rrset.TXTRecord.Values))
+	case opReplace:
+		// A not-found REPLACE means the RRSet vanished between the read and the
+		// write; the next read-back decides whether to create it or stop.
+		if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
+			if !client.IsNotFound(err) {
+				return fmt.Errorf("f5xc: replacing RRSet: %w", err)
+			}
+			klog.V(2).InfoS("f5xc: RRSet gone before replace, reconciling on next read-back", "subdomain", subdomain)
+			return nil
+		}
+		klog.V(2).InfoS("f5xc: replaced RRSet", "subdomain", subdomain, "values", len(rrset.TXTRecord.Values))
+	case opDelete:
+		if err := cl.DeleteRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT"); err != nil && !client.IsNotFound(err) {
+			return fmt.Errorf("f5xc: deleting RRSet: %w", err)
+		}
+		klog.V(2).InfoS("f5xc: deleted RRSet", "subdomain", subdomain)
+	}
+	return nil
 }
 
 // unFQDN strips the trailing dot from a fully-qualified domain name.
