@@ -4,10 +4,9 @@
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/cert-manager-webhook-f5xc)](https://artifacthub.io/packages/search?repo=cert-manager-webhook-f5xc)
 
 An external [cert-manager](https://cert-manager.io/) DNS01 webhook solver for
-[F5 Distributed Cloud](https://www.f5.com/cloud). This webhook allows
-cert-manager to automatically create and clean up DNS TXT records in F5 XC
-when solving ACME DNS01 challenges, enabling fully automated TLS certificate
-issuance for domains managed by F5 Distributed Cloud DNS.
+[F5 Distributed Cloud](https://www.f5.com/cloud). It creates and removes the
+`_acme-challenge` TXT records an ACME DNS01 challenge requires, so cert-manager
+can issue certificates for domains hosted in F5 Distributed Cloud DNS.
 
 ## Prerequisites
 
@@ -35,12 +34,20 @@ issuance for domains managed by F5 Distributed Cloud DNS.
      --namespace cert-manager
    ```
 
+## Single replica
+
+The chart runs one replica and uses the `Recreate` strategy. The solver serializes
+concurrent challenges for the same FQDN with an in-process lock, so a second pod can
+overwrite the TXT record written by the first. Do not scale the Deployment up.
+Upgrades stop the webhook briefly instead of running two pods at once; cert-manager
+retries any challenge that hits the gap.
+
 ## Configuration
 
 Create a `ClusterIssuer` (or `Issuer`) that references the webhook solver.
-Note that `groupName` appears twice in the YAML — at the `webhook` level it is a fixed identifier
-that tells cert-manager which webhook to call (always `acme.f5xc.io`), while inside `config`
-it is the name of the RRSet group in your F5 XC DNS zone:
+`groupName` appears twice in the YAML. At the `webhook` level it is a fixed
+identifier telling cert-manager which webhook to call (always `acme.f5xc.io`).
+Inside `config` it is the name of the RRSet group in your F5 XC DNS zone.
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -56,14 +63,14 @@ spec:
     solvers:
       - dns01:
           webhook:
-            # These two fields are fixed — they tell cert-manager which webhook to call.
+            # These two fields are fixed. They tell cert-manager which webhook to call.
             groupName: acme.f5xc.io
             solverName: f5xc
             # Everything below is passed to the webhook as solver configuration.
             config:
               tenantName: my-tenant
               # RRSet group name in your F5 XC DNS zone (lowercase, digits, hyphens only).
-              # You can choose any name — F5 XC will create the group automatically.
+              # Any name works. F5 XC creates the group automatically.
               groupName: "cert-manager"
               # server: "console.ves.volterra.io"
               # ttl: 120
@@ -72,7 +79,7 @@ spec:
                 key: token
 ```
 
-### Configuration Fields
+### Configuration fields
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -80,9 +87,11 @@ spec:
 | `groupName` | Yes | - | RRSet group name in your F5 XC DNS zone. Must contain only lowercase letters, digits, and hyphens. Find it in F5 XC console under DNS Management > DNS Zones > your zone > RR Set Groups. |
 | `server` | No | `console.ves.volterra.io` | Override the F5 XC console domain. |
 | `ttl` | No | `120` | TTL in seconds for DNS TXT records created during challenges. |
-| `apiTokenSecretRef.name` | Yes | - | Name of the Kubernetes Secret containing the F5 XC API token. |
-| `apiTokenSecretRef.key` | Yes | - | Key within the Secret that holds the API token value. |
-| `certificateSecretRef` | No | - | P12 certificate authentication. See below. |
+| `apiTokenSecretRef.name` | With token auth | - | Name of the Kubernetes Secret containing the F5 XC API token. |
+| `apiTokenSecretRef.key` | With token auth | - | Key within the Secret that holds the API token value. |
+| `certificateSecretRef` | With P12 auth | - | P12 certificate authentication. See below. |
+
+Set either `apiTokenSecretRef` or `certificateSecretRef`. The webhook rejects a config with neither.
 
 <details>
 <summary>Using P12 certificate authentication instead of API token</summary>
@@ -164,8 +173,8 @@ helm upgrade cert-manager-webhook-f5xc \
   --set 'extraArgs={-v=2}'
 ```
 
-- `-v=2` — operation-level logs (Present/CleanUp decisions: RRSet created, replaced, deleted, already in the desired state, and re-applies during read-back verification)
-- `-v=4` — per-request logs for every F5 XC API call (method, path, response status)
+- `-v=2`: what the solver does with each record, such as created, replaced, deleted, already correct, or re-applied after a read-back.
+- `-v=4`: every F5 XC API call, with method, path, and response status.
 
 ## Uninstall
 
