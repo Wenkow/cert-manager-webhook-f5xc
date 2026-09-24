@@ -7,3 +7,6 @@ _out/
 f5xc/integration_p12_test.go
 *.p12
 .f5xc-it.env
+
+# Local zone-lock probe — diagnostic only, live tenant credentials
+f5xc/client/integration_zonelock_test.go
