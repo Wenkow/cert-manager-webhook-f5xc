@@ -67,70 +67,76 @@ func TestSolver_Name(t *testing.T) {
 }
 
 func TestSolver_Present_NewRecord(t *testing.T) {
-	var createdRRSet client.RRSet
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return nil, nil
-		},
-		createRRSet: func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
-			createdRRSet = rrset
-			return &client.APIRRSet{}, nil
-		},
-	}
-	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
-		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
-	}
-	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
-		"tenantName": "my-tenant", "groupName": "cert-manager",
-		"apiTokenSecretRef": map[string]string{"name": "secret", "key": "api-token"},
-	})
-	if err := s.Present(ch); err != nil {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	ch := f5xcChallenge("challenge-key")
+	if err := fakeSolver(fc).Present(ch); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if createdRRSet.TXTRecord == nil {
-		t.Fatal("expected TXT record to be created")
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("values = %v, want [challenge-key]", got)
 	}
-	if createdRRSet.TXTRecord.Name != "_acme-challenge" {
-		t.Errorf("name = %s, want _acme-challenge", createdRRSet.TXTRecord.Name)
-	}
-	if len(createdRRSet.TXTRecord.Values) != 1 || createdRRSet.TXTRecord.Values[0] != "challenge-key" {
-		t.Errorf("values = %v, want [challenge-key]", createdRRSet.TXTRecord.Values)
-	}
-	if createdRRSet.TTL != 120 {
-		t.Errorf("TTL = %d, want 120", createdRRSet.TTL)
+	if fc.creates != 1 {
+		t.Errorf("creates = %d, want 1", fc.creates)
 	}
 }
 
 func TestSolver_Present_AppendToExisting(t *testing.T) {
-	var replacedRRSet client.RRSet
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"existing-value"}}},
-			}, nil
-		},
-		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-			replacedRRSet = rrset
-			return &client.APIRRSet{}, nil
-		},
-	}
-	s := &Solver{
-		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) { return mc, nil },
-		secretReader:  &fakeSecretReader{data: map[string][]byte{"api-token": []byte("test-token")}},
-	}
-	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "new-value", map[string]any{
-		"tenantName": "my-tenant", "groupName": "cert-manager",
-		"apiTokenSecretRef": map[string]string{"name": "secret", "key": "api-token"},
-	})
-	if err := s.Present(ch); err != nil {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"existing-value"}}}
+	if err := fakeSolver(fc).Present(f5xcChallenge("new-value")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(replacedRRSet.TXTRecord.Values) != 2 {
-		t.Fatalf("values count = %d, want 2", len(replacedRRSet.TXTRecord.Values))
+	got := fc.values("_acme-challenge")
+	if len(got) != 2 || got[0] != "existing-value" || got[1] != "new-value" {
+		t.Fatalf("values = %v, want [existing-value new-value]", got)
 	}
-	if replacedRRSet.TXTRecord.Values[0] != "existing-value" || replacedRRSet.TXTRecord.Values[1] != "new-value" {
-		t.Errorf("values = %v, want [existing-value new-value]", replacedRRSet.TXTRecord.Values)
+}
+
+func TestSolver_Present_DuplicateValue(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.records["_acme-challenge"] = client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}}
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fc.creates != 0 || fc.replaces != 0 {
+		t.Errorf("no write expected for duplicate; creates=%d replaces=%d", fc.creates, fc.replaces)
+	}
+	if got := fc.values("_acme-challenge"); len(got) != 1 {
+		t.Fatalf("values = %v, want exactly [challenge-key]", got)
+	}
+}
+
+// First write is silently lost; the read-back must detect the value is missing and
+// re-apply, converging without error.
+func TestSolver_Present_ReadBackRecoversLostWrite(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.loseWrites = 1 // drop the first create
+	if err := fakeSolver(fc).Present(f5xcChallenge("challenge-key")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("value did not converge; values = %v", got)
+	}
+	if fc.creates < 2 {
+		t.Errorf("expected at least 2 create attempts (one lost), got %d", fc.creates)
+	}
+}
+
+// Every write is lost; Present must error after verifyAttempts rather than hang.
+func TestSolver_Present_ErrorsWhenNeverConverges(t *testing.T) {
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
+	fc.loseWrites = 1000 // drop them all
+	err := fakeSolver(fc).Present(f5xcChallenge("challenge-key"))
+	if err == nil {
+		t.Fatal("expected error when value never converges")
+	}
+	if fc.creates != verifyAttempts {
+		t.Errorf("create attempts = %d, want %d", fc.creates, verifyAttempts)
 	}
 }
 
@@ -151,34 +157,6 @@ func tokenSolver(mc *mockClient) *Solver {
 
 // TestSolver_Present_DuplicateValue covers Bug 1: Present must be idempotent and
 // must not append a value that is already in the RRSet (F5 XC rejects duplicates).
-func TestSolver_Present_DuplicateValue(t *testing.T) {
-	replaceCalled := false
-	createCalled := false
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return &client.APIRRSet{
-				RRSet: client.RRSet{TXTRecord: &client.TXTRecord{Name: "_acme-challenge", Values: []string{"challenge-key"}}},
-			}, nil
-		},
-		replaceRRSet: func(ctx context.Context, zone, group, name, recordType string, rrset client.RRSet) (*client.APIRRSet, error) {
-			replaceCalled = true
-			return &client.APIRRSet{}, nil
-		},
-		createRRSet: func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
-			createCalled = true
-			return &client.APIRRSet{}, nil
-		},
-	}
-	if err := tokenSolver(mc).Present(f5xcChallenge("challenge-key")); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if replaceCalled {
-		t.Error("ReplaceRRSet should not be called when value already present")
-	}
-	if createCalled {
-		t.Error("CreateRRSet should not be called when value already present")
-	}
-}
 
 // TestSolver_CleanUp_RemovesOnlyOwnValue covers Bug 2: when other challenges share
 // the RRSet, cleanup must REPLACE with the remaining values, not delete everything.
@@ -341,40 +319,29 @@ func generateTestP12Bytes(t *testing.T) []byte {
 }
 
 func TestSolver_Present_CertAuth(t *testing.T) {
-	var createdRRSet client.RRSet
-	mc := &mockClient{
-		getRRSet: func(ctx context.Context, zone, group, name, recordType string) (*client.APIRRSet, error) {
-			return nil, nil
-		},
-		createRRSet: func(ctx context.Context, zone, group string, rrset client.RRSet) (*client.APIRRSet, error) {
-			createdRRSet = rrset
-			return &client.APIRRSet{}, nil
-		},
-	}
-
+	fastReconcile(t)
+	fc := newFakeRRSetClient()
 	s := &Solver{
 		clientFactory: func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient, error) {
 			if _, ok := auth.(*client.TokenAuth); ok {
 				t.Error("expected CertAuth, got TokenAuth")
 			}
-			return mc, nil
+			return fc, nil
 		},
 		secretReader: &fakeSecretReader{data: map[string][]byte{
 			"cert.p12": generateTestP12Bytes(t),
 			"password": []byte("test-password"),
 		}},
 	}
-
 	ch := challengeRequest("_acme-challenge.example.com.", "example.com.", "challenge-key", map[string]any{
 		"tenantName": "my-tenant", "groupName": "cert-manager",
 		"certificateSecretRef": map[string]string{"name": "secret", "p12Key": "cert.p12", "passwordKey": "password"},
 	})
-
 	if err := s.Present(ch); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if createdRRSet.TXTRecord == nil {
-		t.Fatal("expected TXT record to be created")
+	if got := fc.values("_acme-challenge"); len(got) != 1 || got[0] != "challenge-key" {
+		t.Fatalf("values = %v, want [challenge-key]", got)
 	}
 }
 

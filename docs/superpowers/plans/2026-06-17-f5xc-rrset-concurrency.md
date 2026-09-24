@@ -374,7 +374,7 @@ git commit -m "test: add stateful fake RRSet client and reconcile tuning vars"
 - Modify: `f5xc/solver.go` (add `locks` field, `rrsetOp`, helpers, `reconcile`; rewrite `Present`)
 - Modify: `f5xc/solver_test.go` (repoint Present tests onto the fake; add read-back + exhaustion tests)
 
-- [ ] **Step 1: Write the failing Present tests (on the fake)**
+- [x] **Step 1: Write the failing Present tests (on the fake)**
 
 In `f5xc/solver_test.go`, REPLACE the existing `TestSolver_Present_NewRecord` and `TestSolver_Present_AppendToExisting` and `TestSolver_Present_DuplicateValue` with these fake-backed versions, and add the read-back/exhaustion tests:
 
@@ -454,12 +454,12 @@ func TestSolver_Present_ErrorsWhenNeverConverges(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the Present tests to verify they fail**
+- [x] **Step 2: Run the Present tests to verify they fail**
 
 Run: `go test ./f5xc/ -run 'TestSolver_Present' -v`
 Expected: FAIL — the new behavior (read-back, exhaustion error, exact write counts) is not implemented; counts/convergence assertions fail.
 
-- [ ] **Step 3: Implement the reconcile loop, helpers, locks field, and rewrite Present**
+- [x] **Step 3: Implement the reconcile loop, helpers, locks field, and rewrite Present**
 
 In `f5xc/solver.go`:
 
@@ -603,14 +603,14 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 }
 ```
 
-- [ ] **Step 4: Run the Present tests to verify they pass**
+- [x] **Step 4: Run the Present tests to verify they pass**
 
 Run: `go test ./f5xc/ -run 'TestSolver_Present' -v`
 Expected: PASS (NewRecord, AppendToExisting, DuplicateValue, ReadBackRecoversLostWrite, ErrorsWhenNeverConverges).
 
 Note: `TestSolver_Present_CertAuth` (still present, closure-based) will now fail because its closure GET does not reflect the create. Fix it in the next step.
 
-- [ ] **Step 5: Repoint TestSolver_Present_CertAuth onto the fake**
+- [x] **Step 5: Repoint TestSolver_Present_CertAuth onto the fake**
 
 In `f5xc/solver_test.go`, REPLACE `TestSolver_Present_CertAuth` with:
 
@@ -643,12 +643,12 @@ func TestSolver_Present_CertAuth(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Run the full package tests**
+- [x] **Step 6: Run the full package tests**
 
 Run: `go test ./f5xc/ -run 'TestSolver_Present' -v`
 Expected: PASS including CertAuth.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add f5xc/solver.go f5xc/solver_test.go

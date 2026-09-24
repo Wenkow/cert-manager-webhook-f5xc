@@ -46,6 +46,7 @@ type clientFactory func(cfg *F5XCConfig, auth client.Authenticator) (RRSetClient
 type Solver struct {
 	clientFactory clientFactory
 	secretReader  SecretReader
+	locks         keyedMutex // per-FQDN serialization; zero value is ready to use
 }
 
 // NewSolver returns a production Solver with default client factory.
@@ -71,7 +72,8 @@ func (s *Solver) Initialize(kubeClientConfig *restclient.Config, stopCh <-chan s
 	return nil
 }
 
-// Present creates or appends a TXT record for the ACME challenge.
+// Present creates or appends a TXT record for the ACME challenge. It is idempotent
+// and safe under concurrent challenges for the same FQDN.
 func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 	cfg, cl, err := s.setup(ch)
 	if err != nil {
@@ -84,53 +86,26 @@ func (s *Solver) Present(ch *acme.ChallengeRequest) error {
 
 	klog.V(2).InfoS("f5xc: presenting challenge", "fqdn", ch.ResolvedFQDN, "zone", zone, "subdomain", subdomain)
 
-	existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
-	if err != nil {
-		return fmt.Errorf("f5xc: getting existing RRSet: %w", err)
+	satisfied := func(values []string) bool {
+		return containsValue(values, ch.Key)
 	}
-
-	if existing == nil || existing.RRSet.TXTRecord == nil {
-		rrset := client.RRSet{
-			Description: "cert-manager",
-			TTL:         cfg.EffectiveTTL(),
-			TXTRecord: &client.TXTRecord{
-				Name:   subdomain,
-				Values: []string{ch.Key},
-			},
+	mutate := func(existing *client.APIRRSet) (rrsetOp, client.RRSet) {
+		if existing == nil || existing.RRSet.TXTRecord == nil {
+			return opCreate, client.RRSet{
+				Description: "cert-manager",
+				TTL:         cfg.EffectiveTTL(),
+				TXTRecord:   &client.TXTRecord{Name: subdomain, Values: []string{ch.Key}},
+			}
 		}
-		if _, err := cl.CreateRRSet(ctx, zone, cfg.GroupName, rrset); err != nil {
-			return fmt.Errorf("f5xc: creating RRSet: %w", err)
-		}
-		klog.V(2).InfoS("f5xc: created RRSet", "subdomain", subdomain)
-		return nil
-	}
-
-	values := existing.RRSet.TXTRecord.Values
-
-	// Present must be idempotent: cert-manager may retry, and multiple challenges
-	// for the same FQDN (e.g. apex + wildcard SANs) share one TXT RRSet. Appending a
-	// value that is already present produces a duplicate, which F5 XC rejects with
-	// HTTP 400 ("values should be unique").
-	for _, v := range values {
-		if v == ch.Key {
-			klog.V(2).InfoS("f5xc: challenge value already present, skipping", "subdomain", subdomain)
-			return nil
+		values := append([]string{}, existing.RRSet.TXTRecord.Values...)
+		values = append(values, ch.Key)
+		return opReplace, client.RRSet{
+			TTL:       cfg.EffectiveTTL(),
+			TXTRecord: &client.TXTRecord{Name: subdomain, Values: values},
 		}
 	}
 
-	values = append(values, ch.Key)
-	rrset := client.RRSet{
-		TTL: cfg.EffectiveTTL(),
-		TXTRecord: &client.TXTRecord{
-			Name:   subdomain,
-			Values: values,
-		},
-	}
-	if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
-		return fmt.Errorf("f5xc: replacing RRSet: %w", err)
-	}
-	klog.V(2).InfoS("f5xc: appended challenge value to RRSet", "subdomain", subdomain, "valueCount", len(values))
-	return nil
+	return s.reconcile(ctx, cl, cfg, zone, subdomain, satisfied, mutate)
 }
 
 // CleanUp removes the TXT record for the ACME challenge.
@@ -253,6 +228,91 @@ func (s *Solver) buildAuth(cfg *F5XCConfig, namespace string) (client.Authentica
 		return nil, fmt.Errorf("f5xc: key %q not found in secret %s/%s", ref.PasswordKey, namespace, ref.Name)
 	}
 	return client.NewCertAuth(p12Data, string(passwordBytes))
+}
+
+// rrsetOp is the write needed to move an RRSet toward the desired state.
+type rrsetOp int
+
+const (
+	opCreate rrsetOp = iota
+	opReplace
+	opDelete
+)
+
+// lockKey identifies a single RRSet (all records here are TXT).
+func lockKey(zone, group, subdomain string) string {
+	return zone + "/" + group + "/" + subdomain + "/TXT"
+}
+
+// currentValues extracts the TXT values from a GET result (nil when absent).
+func currentValues(existing *client.APIRRSet) []string {
+	if existing == nil || existing.RRSet.TXTRecord == nil {
+		return nil
+	}
+	return existing.RRSet.TXTRecord.Values
+}
+
+func containsValue(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// reconcile serializes the read-modify-write for one RRSet (per FQDN) and verifies
+// the result by reading back. Each iteration: GET, return if satisfied (this is the
+// read-back), otherwise apply mutate. Re-application is safe because every operation
+// is idempotent. Bounded by verifyAttempts; on exhaustion it returns an error so
+// cert-manager retries the challenge.
+func (s *Solver) reconcile(
+	ctx context.Context,
+	cl RRSetClient,
+	cfg *F5XCConfig,
+	zone, subdomain string,
+	satisfied func(values []string) bool,
+	mutate func(existing *client.APIRRSet) (rrsetOp, client.RRSet),
+) error {
+	key := lockKey(zone, cfg.GroupName, subdomain)
+	s.locks.Lock(key)
+	defer s.locks.Unlock(key)
+
+	for attempt := 1; attempt <= verifyAttempts; attempt++ {
+		existing, err := cl.GetRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT")
+		if err != nil {
+			if !client.IsNotFound(err) {
+				return fmt.Errorf("f5xc: getting RRSet: %w", err)
+			}
+			existing = nil
+		}
+
+		if satisfied(currentValues(existing)) {
+			return nil
+		}
+
+		op, rrset := mutate(existing)
+		switch op {
+		case opCreate:
+			if _, err := cl.CreateRRSet(ctx, zone, cfg.GroupName, rrset); err != nil {
+				return fmt.Errorf("f5xc: creating RRSet: %w", err)
+			}
+		case opReplace:
+			if _, err := cl.ReplaceRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT", rrset); err != nil {
+				return fmt.Errorf("f5xc: replacing RRSet: %w", err)
+			}
+		case opDelete:
+			if err := cl.DeleteRRSet(ctx, zone, cfg.GroupName, subdomain, "TXT"); err != nil && !client.IsNotFound(err) {
+				return fmt.Errorf("f5xc: deleting RRSet: %w", err)
+			}
+		}
+
+		if attempt < verifyAttempts {
+			time.Sleep(verifyInterval)
+		}
+	}
+
+	return fmt.Errorf("f5xc: RRSet %q did not converge after %d attempts", subdomain, verifyAttempts)
 }
 
 // unFQDN strips the trailing dot from a fully-qualified domain name.
