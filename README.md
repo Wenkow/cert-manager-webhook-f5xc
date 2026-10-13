@@ -30,7 +30,7 @@ can issue certificates for domains hosted in F5 Distributed Cloud DNS.
    ```bash
    helm install cert-manager-webhook-f5xc \
      oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-     --version 0.6.0 \
+     --version 0.6.1 \
      --namespace cert-manager
    ```
 
@@ -156,7 +156,7 @@ When cert-manager processes this Certificate, it will:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.6.0 \
+  --version 0.6.1 \
   --namespace cert-manager
 ```
 
@@ -168,7 +168,7 @@ Raise verbosity via `extraArgs` to see what the solver does with each challenge:
 ```bash
 helm upgrade cert-manager-webhook-f5xc \
   oci://ghcr.io/wenkow/charts/cert-manager-webhook-f5xc \
-  --version 0.6.0 \
+  --version 0.6.1 \
   --namespace cert-manager \
   --set 'extraArgs={-v=2}'
 ```

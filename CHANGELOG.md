@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-13
+
+### Security
+
+- Upgrade Go to 1.27.2, `golang.org/x/net` to v0.60.0, and `go.opentelemetry.io/otel/exporters/otlp/otlptrace` (and `otlptracegrpc`) to v1.45.0.
+
+### Fixed
+
+- `CleanUp` re-reads the RRSet before deleting it, so a stale read cannot remove a value belonging to another challenge.
+
+### Changed
+
+- The chart README documents the single-replica requirement.
+
 ## [0.6.0] - 2026-09-24
 
 ### Fixed
@@ -216,6 +230,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.6.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.1...v0.5.2
