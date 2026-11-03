@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.6.1
-appVersion: "0.6.1"
+version: 0.6.2
+appVersion: "0.6.2"
 type: application
 keywords:
   - cert-manager
@@ -21,7 +21,7 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.6.1
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.6.2
       platforms:
         - linux/amd64
         - linux/arm64
@@ -29,9 +29,7 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
     - kind: security
-      description: "Upgrade Go to 1.27.2, golang.org/x/net to v0.60.0 and the OpenTelemetry OTLP trace exporters to v1.45.0"
-    - kind: fixed
-      description: "CleanUp re-reads the RRSet before deleting it, so a stale read cannot remove another challenge's value"
+      description: "Upgrade Go to 1.27.3 and golang.org/x/net to v0.62.0"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io
