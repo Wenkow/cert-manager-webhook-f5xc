@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-11-24
+
+### Security
+
+- Upgrade Go to 1.27.4 and `go.opentelemetry.io/otel` to v1.47.0.
+
+### Changed
+
+- Upgrade `github.com/cert-manager/cert-manager` to v1.21.3, `k8s.io/*` to v0.36.6, `google.golang.org/grpc` to v1.85.0, and other dependencies.
+
 ## [0.6.2] - 2026-11-03
 
 ### Security
@@ -236,6 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solver supports creating new TXT records and appending to existing ones
 - Helm chart with RBAC, PKI chain, Deployment, Service, APIService
 
+[0.6.3]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Wenkow/cert-manager-webhook-f5xc/compare/v0.5.3...v0.6.0

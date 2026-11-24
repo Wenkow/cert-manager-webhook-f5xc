@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cert-manager-webhook-f5xc
 description: A cert-manager webhook solver for F5 Distributed Cloud DNS
-version: 0.6.2
-appVersion: "0.6.2"
+version: 0.6.3
+appVersion: "0.6.3"
 type: application
 keywords:
   - cert-manager
@@ -21,7 +21,7 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/images: |
     - name: cert-manager-webhook-f5xc
-      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.6.2
+      image: ghcr.io/wenkow/cert-manager-webhook-f5xc:0.6.3
       platforms:
         - linux/amd64
         - linux/arm64
@@ -29,7 +29,9 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/changes: |
     - kind: security
-      description: "Upgrade Go to 1.27.3 and golang.org/x/net to v0.62.0"
+      description: "Upgrade Go to 1.27.4 and OpenTelemetry to v1.47.0"
+    - kind: changed
+      description: "Upgrade cert-manager to v1.21.3, k8s.io/* to v0.36.6 and other dependencies"
   artifacthub.io/links: |
     - name: cert-manager
       url: https://cert-manager.io
